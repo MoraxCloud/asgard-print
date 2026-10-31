@@ -39,8 +39,8 @@ export default {
 </ul>
 
 <h2>关于项目</h2>
-<p><strong>项目名称：</strong>worm-vue3-print</p>
-<p><strong>仓库地址：</strong><a href="https://gitee.com/liulong_oschina/worm-vue3-print" target="_blank" rel="noopener noreferrer">https://gitee.com/liulong_oschina/worm-vue3-print</a></p>
+<p><strong>项目名称：</strong>Asgard Print</p>
+<p><strong>仓库地址：</strong><a href="https://github.com/MoraxCloud/asgard-print" target="_blank" rel="noopener noreferrer">https://github.com/MoraxCloud/asgard-print</a></p>
 <p>基于 Vue 3 的可视化打印模板设计器，支持拖拽式模板编辑、表达式数据绑定和浏览器端打印预览。</p>
   `
 }

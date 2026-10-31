@@ -74,7 +74,7 @@ export function renderHelpModal(opts: HelpModalOptions): El {
       h('div', { class: 'help-modal-header' }, [
         h('div', { class: 'help-modal-title-wrap' }, [
           h('h2', { class: 'help-modal-title', text: '帮助文档' }),
-          h('span', { class: 'help-modal-project', text: 'worm-vue3-print' }),
+          h('span', { class: 'help-modal-project', text: 'Asgard Print' }),
         ]),
         h('button', {
           type: 'button', class: 'help-modal-close', title: '关闭', text: '×',
