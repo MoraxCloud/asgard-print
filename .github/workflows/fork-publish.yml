@@ -1,0 +1,108 @@
+name: Publish private registry
+
+# 仅本 fork 使用：把 @worm-vue3-print/core 与 @worm-vue3-print/common 发布到私有 registry。
+# 上游的 release.yml / publish-npm.yml / publish-common.yml 已加仓库守卫，在 fork 内自动跳过。
+#
+# 首次使用前在仓库 Settings 配置：
+#   Variables → NPM_REGISTRY：私有 registry 地址，如 https://npm.example.com
+#   Secrets   → NPM_TOKEN：该 registry 的发布令牌
+# 包名保持 @worm-vue3-print/*（Verdaccio / Nexus 可直接托管同名包）；
+# GitHub Packages 要求 scope 与仓库属主一致，需先改包名，不适用本流程。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（须与 core、common 的 package.json 一致，用 1.4.3 这类正式号，勿用 1.4.3-asgard.1 预发布号）'
+        required: true
+        type: string
+      dry_run:
+        description: '只打包干跑，不上传'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # 只在 fork 仓库执行：防止把私有包误发到其他仓库
+    if: github.repository == 'MoraxCloud/asgard-print'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: ${{ vars.NPM_REGISTRY }}
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 core、canvas、common
+        run: |
+          # canvas 仅作为 common 样式派生的构建前置，不发布
+          npm run build -w @worm-vue3-print/core
+          npm run build -w @worm-vue3-print/canvas
+          npm run build -w @worm-vue3-print/common
+
+      - name: 测试 core 与 common
+        run: |
+          npm test -w @worm-vue3-print/core
+          npm test -w @worm-vue3-print/common
+
+      - name: 校验版本号一致
+        run: |
+          EXPECT="${{ inputs.version }}"
+          for pkg in core common; do
+            VER=$(node -p "require('./packages/print-$pkg/package.json').version")
+            if [ "$VER" != "$EXPECT" ]; then
+              echo "::error::print-$pkg 版本 $VER 与输入版本 $EXPECT 不一致"
+              exit 1
+            fi
+          done
+          echo "版本一致：$EXPECT"
+
+      - name: 验证 registry 登录态
+        run: npm whoami --registry="$NPM_REGISTRY"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}
+
+      # print-common 的 package.json 带 publishConfig.registry，发布时会覆盖 .npmrc；
+      # 这里显式改写为私有 registry，避免误发到公共 npm。
+      - name: 指向私有 registry
+        run: |
+          npm pkg set publishConfig.registry="$NPM_REGISTRY" -w @worm-vue3-print/core -w @worm-vue3-print/common
+        env:
+          NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}
+
+      # common 依赖 core，必须先发 core
+      - name: 发布 @worm-vue3-print/core
+        working-directory: packages/print-core
+        run: |
+          EXTRA=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then EXTRA="--dry-run"; fi
+          npm publish --registry="$NPM_REGISTRY" $EXTRA
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}
+
+      - name: 发布 @worm-vue3-print/common
+        working-directory: packages/print-common
+        run: |
+          EXTRA=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then EXTRA="--dry-run"; fi
+          npm publish --registry="$NPM_REGISTRY" $EXTRA
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}

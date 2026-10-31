@@ -13,6 +13,8 @@ on:
 
 jobs:
   release:
+    # fork 内跳过：上游发布流程只在原仓库执行，避免误发到公共 npm
+    if: github.repository == 'worm-longliu/worm-vue3-print'
     runs-on: ubuntu-latest
     # 创建 GitHub Release 需要 contents 写权限
     permissions:
