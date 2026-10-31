@@ -1,4 +1,6 @@
-# worm-vue3-print
+# Asgard Print
+
+> 本仓库是 [worm-vue3-print](https://github.com/worm-longliu/worm-vue3-print) 的衍生版本，遵循 MIT 许可，原始版权归原作者所有。上游代码持续同步，内部定制与回迁上游的改动分开维护。
 
 Vue 3 可视化打印模板设计器 + 模板表达式引擎 + 同构渲染管线的开源 monorepo（npm workspaces）。
 

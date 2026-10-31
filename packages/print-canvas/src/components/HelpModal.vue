@@ -10,7 +10,7 @@
           <div class="help-modal-header">
             <div class="help-modal-title-wrap">
               <h2 class="help-modal-title">帮助文档</h2>
-              <span class="help-modal-project">worm-vue3-print</span>
+              <span class="help-modal-project">Asgard Print</span>
             </div>
             <button
               class="help-modal-close"

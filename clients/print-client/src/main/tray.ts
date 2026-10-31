@@ -14,7 +14,7 @@ export function createTray(deps: TrayDeps): Tray {
   // macOS 用单色模板图（菜单栏随深色/浅色自动反相），Windows / Linux 用与安装包一致的品牌图形
   const image = process.platform === 'darwin' ? createTrayIcon() : brandIcon(16)
   const tray = new Tray(image)
-  tray.setToolTip('worm-vue3-print 静默打印客户端')
+  tray.setToolTip('Asgard Print 静默打印客户端')
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
