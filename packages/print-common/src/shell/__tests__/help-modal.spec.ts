@@ -62,7 +62,7 @@ describe('help-modal 结构（对照 canvas HelpModal.vue）', () => {
     expect(q(host, '.help-modal-header')).toBeTruthy()
     expect(q(host, '.help-modal-title-wrap')).toBeTruthy()
     expect(q(host, 'h2.help-modal-title')?.textContent).toBe('帮助文档')
-    expect(q(host, '.help-modal-project')?.textContent).toBe('worm-vue3-print')
+    expect(q(host, '.help-modal-project')?.textContent).toBe('Asgard Print')
     expect(q(host, '.help-modal-close')?.textContent).toBe('×')
     expect(q(host, '.help-modal-close')?.title).toBe('关闭')
     expect(q(host, '.help-modal-body')).toBeTruthy()
