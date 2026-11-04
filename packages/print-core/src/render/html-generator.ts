@@ -34,14 +34,18 @@ import {
   resolveFlowColumns,
   resolveFlowGapX,
   resolveFlowMaxSpan,
+  resolveFlowPadding,
   resolveFlowRowHeight,
+  resolveFlowLayoutMode,
+  flowContentWidthMm,
   type FlowRenderConfig,
+  type FlowRow,
 } from './flow-list.js'
 import { cropStyleDeclarations } from './crop-style.js'
 import { injectSystemVariables } from './data-binder.js'
 import { evaluateTemplate } from './expression-eval.js'
 import { renderWatermarkLayerHtml } from './watermark.js'
-import { tableDesignBottom } from './pagination-engine.js'
+import { splittableDesignBottom } from './pagination-engine.js'
 import { buildMergeOverlay } from './row-merge.js'
 import { barcodeAvailableBoxMm } from './barcode-dot.js'
 import { resolveElementRotation } from './rotation.js'
@@ -337,6 +341,9 @@ function renderSection(section: PageSection, template: TemplateData, ctx: Render
   if (section.type === 'table-slice') {
     return renderTableSlice(el, section, ctx)
   }
+  if (section.type === 'flow-list-slice') {
+    return renderFlowListSlice(el, section, ctx)
+  }
   if (section.type === 'flow-group') {
     return renderFlowGroup(el, section, template, ctx)
   }
@@ -436,9 +443,11 @@ function renderElement(el: TemplateElement, isMeasure: boolean, containerStyle?:
   const height = opts.height ?? undefined
   const type = el.type || el.printElementType?.type || 'text'
   const fit = resolveElementTextFit(type, opts)
+  // 动态流式列表：容器高度由内容撑开，设计高度仅作画布初始尺寸，不写入落纸样式
+  const dynamicFlow = type === 'flowList' && resolveFlowLayoutMode(opts.flowLayoutMode) === 'dynamic'
   // 自适应行高：不写死高度（两趟一致），盒子由内容撑开——
   // 实测高度即内容高度，分页与连续纸探针才能拿到真实占位；设计高度仍作为分页下限保留
-  const fitHeight = fit === 'autoHeight' ? undefined : height
+  const fitHeight = fit === 'autoHeight' || dynamicFlow ? undefined : height
   // 方案 A+B：flow-group 内跟随元素用相对容器样式（containerStyle）覆盖绝对定位
   const baseStyle = containerStyle ?? elementPositionStyle(left, top, width, fitHeight, opts.zIndex)
   // 元素级边框统一追加（rect/oval/hline/vline/table 由 resolveElementBorder 排除，不双重边框）；
@@ -511,6 +520,17 @@ function renderElement(el: TemplateElement, isMeasure: boolean, containerStyle?:
         fontSizePt: opts.fontSize ?? 12,
         autoSpan: opts.flowAutoSpan === true,
       }
+      if (dynamicFlow) {
+        // 动态模式：绑定时已按内容宽保留排布行；逐行输出可独立测量的标记行。
+        // 测量趟与最终趟共用同一行 HTML 助手，保证行数与跨列口径一致。
+        const padding = resolveFlowPadding(opts)
+        const rows: FlowRow[] = Array.isArray(opts._flowRows)
+          ? opts._flowRows
+          : layoutFlowList(items, { ...cfg, width: flowContentWidthMm(width, padding) })
+        return `<div class="print-element" style="${style}${textStyle(opts)}display:block;box-sizing:border-box;height:auto;overflow:visible;padding:${flowMm(padding.top)} ${flowMm(padding.right)} ${flowMm(padding.bottom)} ${flowMm(padding.left)};"${measureAttr}${fitAttr}>
+  ${flowRowsHtml(rows, columns, gapX, rowHeight)}
+</div>`
+      }
       // 一框一页：单元超出框高由 overflow:hidden 裁掉，不撑破纸面（第 8 项口径）
       const cells = layoutFlowList(items, cfg)
         .flatMap(row => row.cells)
@@ -526,6 +546,96 @@ function renderElement(el: TemplateElement, isMeasure: boolean, containerStyle?:
       // 普通文本（text）与未单列的类型都走这里：判据只在显式打开新档时出声明，缺省逐字不变
       return `<div class="print-element" style="${style}${textStyle(opts)}${whiteSpaceStyle(opts)}${elementFitStyle(fit, opts)}"${measureAttr}${fitAttr}>${esc(opts.formatter ?? opts.testData ?? '')}</div>`
   }
+}
+
+/** mm 数值落纸：钳 3 位小数，避免浮点噪声进入内联样式 */
+function flowMm(value: number): string {
+  return `${Math.round(value * 1000) / 1000}mm`
+}
+
+/** 动态模式单行网格样式：行内均分列、横向间距与固定模式同口径，行高为最小高语义 */
+function flowRowGridStyle(columns: number, gapX: number, rowHeight: number): string {
+  return [
+    'display:grid',
+    `grid-template-columns:repeat(${columns},minmax(0,1fr))`,
+    `column-gap:${flowMm(gapX)}`,
+    `min-height:${flowMm(rowHeight)}`,
+  ].join(';')
+}
+
+/**
+ * 动态模式逐行 HTML。每行独立标注 data-flow-row-index，供测量趟的 DOM 执行器
+ * 按行读取真实高度；行内单元与固定模式同一 class 与跨列声明。
+ * 测量趟与最终切片共用本助手：切片传入 startIndex 保持全局行索引（不重排行序）。
+ */
+function flowRowsHtml(
+  rows: FlowRow[],
+  columns: number,
+  gapX: number,
+  rowHeight: number,
+  startIndex = 0,
+): string {
+  return rows
+    .map((row, index) => {
+      const cells = row.cells
+        .map(c => `<div class="print-flow-cell"${c.span > 1 ? ` style="grid-column:span ${c.span};"` : ''}>${esc(c.text)}</div>`)
+        .join('\n    ')
+      return `<div class="print-flow-row" data-flow-row-index="${startIndex + index}" style="${flowRowGridStyle(columns, gapX, rowHeight)};">
+    ${cells}
+  </div>`
+    })
+    .join('\n  ')
+}
+
+/**
+ * 动态流式列表切片容器的「非定位」样式段：完整边框 + 四边内边距 + 边框闭合，
+ * 高度由本片行、内边距和边框撑开（不写死 height、不走 overflow:hidden 裁切）。
+ * 独立分节与 flow-group 内嵌切片共用，保证每片独立闭合。
+ */
+function flowSliceChromeStyle(type: string, opts: Record<string, any>): string {
+  let style = ''
+  const elBorders = resolveElementBorder(type, opts)
+  if (elBorders?.all) {
+    style += `border:${elBorders.all.borderWidth} ${elBorders.all.borderStyle} ${elBorders.all.borderColor};`
+  }
+  if (elBorders) {
+    for (const side of ELEMENT_BORDER_SIDES) {
+      const e = elBorders.edges[side]
+      if (e) style += `border-${side}:${e.borderWidth} ${e.borderStyle} ${e.borderColor};`
+    }
+  }
+  const padding = resolveFlowPadding(opts)
+  style += `${textStyle(opts)}display:block;box-sizing:border-box;height:auto;overflow:visible;padding:${flowMm(padding.top)} ${flowMm(padding.right)} ${flowMm(padding.bottom)} ${flowMm(padding.left)};`
+  return style
+}
+
+/**
+ * 动态流式列表分页切片：每片独立闭合容器（行 HTML 与测量趟同一助手）。
+ * 复用元素定位、边框、背景与文字样式及四边内边距，但不写死 height、
+ * 也不走 `.print-element` 的 overflow:hidden 裁切——容器高度由本片行撑开。
+ */
+function renderFlowListSlice(el: TemplateElement, section: PageSection, _ctx?: RenderCtx): string {
+  const opts = el.options ?? {}
+  const rows: FlowRow[] = Array.isArray(opts._flowRows) ? opts._flowRows : []
+  const startFlowRow = section.startFlowRow ?? 0
+  const endFlowRow = section.endFlowRow ?? rows.length
+  // 空行区间：不输出空切片（容器不带只有边框的页）
+  if (startFlowRow >= endFlowRow) return ''
+  const type = el.type || el.printElementType?.type || 'flowList'
+  // 续片在本页内容区从页顶(0)开始，首片用设计 top / 切片 renderTop
+  const style = elementPositionStyle(
+    opts.left ?? 0,
+    section.renderTop ?? opts.top ?? 0,
+    opts.width ?? 100,
+    undefined,
+    opts.zIndex,
+  )
+  const columns = resolveFlowColumns(opts.flowColumns)
+  const gapX = resolveFlowGapX(opts.flowGapX)
+  const rowHeight = resolveFlowRowHeight(opts.flowRowHeight)
+  return `<div class="print-flowlist-slice" style="${style}${flowSliceChromeStyle(type, opts)}">
+  ${flowRowsHtml(rows.slice(startFlowRow, endFlowRow), columns, gapX, rowHeight, startFlowRow)}
+</div>`
 }
 
 /** codeImgHtml 的可选参数（调用方按元素/单元格场景选择） */
@@ -854,10 +964,11 @@ function renderSummaryRows(el: TemplateElement, opts: Record<string, any>, ctx?:
 }
 
 /**
- * 方案 A+B：渲染「表格 slice + 跟随区」相对容器。
- * 容器按 groupTop 绝对定位；容器内表格 slice 走文档流；
- * 跟随元素外包 position:relative 的 flow-follow 容器（紧随切片实际底部），
- * 成员按设计坐标绝对定位：left = 设计 left − 表格 left，top = 设计 top − 表格设计底部。
+ * 方案 A+B：渲染「锚点切片 + 跟随区」相对容器（表格 / 动态 flowList 共用）。
+ * 容器按 groupTop 绝对定位；容器内切片走文档流（动态切片绝不能沿用独立分节的
+ * 绝对定位 + top 样式，否则容器内坐标翻倍）；跟随元素外包 position:relative 的
+ * flow-follow 容器（紧随切片实际底部），成员按设计坐标绝对定位：
+ * left = 设计 left − 锚点 left，top = 设计 top − 锚点设计底部。
  * 由此保留成员间设计几何与重叠（WYSIWYG）：非重叠顺序元素位置与旧文档流间隙排布一致，
  * 重叠成员不再被压缩成块级堆叠。
  */
@@ -868,39 +979,45 @@ function renderFlowGroup(
   ctx?: RenderCtx,
 ): string {
   const opts = el.options ?? {}
-  const tableLeft = opts.left ?? 0
-  const tableWidth = opts.width ?? 100
+  const anchorType = el.type || el.printElementType?.type || 'text'
+  const isDynamicAnchor = anchorType === 'flowList' && resolveFlowLayoutMode(opts.flowLayoutMode) === 'dynamic'
+  const anchorLeft = opts.left ?? 0
+  const anchorWidth = opts.width ?? 100
   const groupTop = section.groupTop ?? opts.top ?? 0
-  const tableBottom = tableDesignBottom(el)
+  const anchorBottom = splittableDesignBottom(el)
   const zStyle = typeof opts.zIndex === 'number' ? `z-index:${opts.zIndex};` : ''
-  const style = `position:absolute;left:${mm(tableLeft)};top:${mm(groupTop)};width:${mm(tableWidth)};overflow:visible;${zStyle}`
+  const style = `position:absolute;left:${mm(anchorLeft)};top:${mm(groupTop)};width:${mm(anchorWidth)};overflow:visible;${zStyle}`
 
-  // 本页表格 slice（跟随区整体移页时为空；小计/汇总行即使无正文行也渲染）
-  const startRow = section.startRow ?? 0
-  const endRow = section.endRow ?? 0
+  // 本页锚点切片（跟随区整体移页时为空；小计/汇总行即使无正文行也渲染）
   let sliceHtml = ''
-  if (endRow > startRow || section.subtotal || section.summary) {
-    const renderRows: RenderRow[] = opts._renderRows ?? []
-    const repeatCount: number = opts._repeatHeaderCount ?? 0
-    const repeatHtml = section.repeatHeader && repeatCount > 0
-      ? renderMatrixRows(renderRows, 0, repeatCount, opts, false, ctx, { elementId: el.id, kind: 'b' }, repeatCount)
-      : ''
-    const bodyHtml = renderMatrixRows(renderRows, startRow, endRow, opts, false, ctx, { elementId: el.id, kind: 'b' })
-    const subtotalHtml = section.subtotal ? renderSubtotalRows(el, section, opts, ctx) : ''
-    const summaryHtml = section.summary ? renderSummaryRows(el, opts, ctx) : ''
-    sliceHtml = `<div class="flow-slice" style="position:relative;width:${mm(tableWidth)};overflow:visible;">
+  if (isDynamicAnchor) {
+    sliceHtml = flowGroupSliceHtml(el, section)
+  } else {
+    const startRow = section.startRow ?? 0
+    const endRow = section.endRow ?? 0
+    if (endRow > startRow || section.subtotal || section.summary) {
+      const renderRows: RenderRow[] = opts._renderRows ?? []
+      const repeatCount: number = opts._repeatHeaderCount ?? 0
+      const repeatHtml = section.repeatHeader && repeatCount > 0
+        ? renderMatrixRows(renderRows, 0, repeatCount, opts, false, ctx, { elementId: el.id, kind: 'b' }, repeatCount)
+        : ''
+      const bodyHtml = renderMatrixRows(renderRows, startRow, endRow, opts, false, ctx, { elementId: el.id, kind: 'b' })
+      const subtotalHtml = section.subtotal ? renderSubtotalRows(el, section, opts, ctx) : ''
+      const summaryHtml = section.summary ? renderSummaryRows(el, opts, ctx) : ''
+      sliceHtml = `<div class="flow-slice" style="position:relative;width:${mm(anchorWidth)};overflow:visible;">
   ${matrixTableHtml(el, `${repeatHtml}\n${bodyHtml}${subtotalHtml}${summaryHtml}`)}
 </div>`
+    }
   }
 
-  // 跟随区：flow-follow 容器（relative）高度 = 成员相对表格设计底部的并集范围，
+  // 跟随区：flow-follow 容器（relative）高度 = 成员相对锚点设计底部的并集范围，
   // 保证切片跨页/整体移页时容器始终紧随切片实际底部排布。
   const followIds = section.followElementIds ?? []
   const followExtent = followIds.reduce((maxBottom, id) => {
     const m = findElement(template, id)
     if (!m) return maxBottom
     return Math.max(maxBottom, (m.options?.top ?? 0) + (m.options?.height ?? 0))
-  }, tableBottom)
+  }, anchorBottom)
 
   const followHtml = followIds
     .map(id => {
@@ -908,15 +1025,15 @@ function renderFlowGroup(
       if (!m) return ''
       const mTop = m.options?.top ?? 0
       const mLeft = m.options?.left ?? 0
-      const mWidth = m.options?.width ?? tableWidth
+      const mWidth = m.options?.width ?? anchorWidth
       const mHeight = m.options?.height ?? 0
       const mZ = m.options?.zIndex
       const type = m.type || m.printElementType?.type || 'text'
       const needsHeight = type === 'rect' || type === 'oval' || type === 'image' || type === 'vline'
       const flowStyle = [
         'position:absolute',
-        `left:${mm(mLeft - tableLeft)}`,
-        `top:${mm(mTop - tableBottom)}`,
+        `left:${mm(mLeft - anchorLeft)}`,
+        `top:${mm(mTop - anchorBottom)}`,
         `width:${mm(mWidth)}`,
         ...(needsHeight && mHeight > 0 ? [`height:${mm(mHeight)}`] : []),
         ...(typeof mZ === 'number' ? [`z-index:${mZ}`] : []),
@@ -927,7 +1044,7 @@ function renderFlowGroup(
     .join('\n')
 
   const followWrap = followIds.length > 0
-    ? `<div class="flow-follow" style="position:relative;width:${mm(tableWidth)};height:${mm(Math.max(followExtent - tableBottom, 0))};overflow:visible;">
+    ? `<div class="flow-follow" style="position:relative;width:${mm(anchorWidth)};height:${mm(Math.max(followExtent - anchorBottom, 0))};overflow:visible;">
 ${followHtml}
 </div>`
     : ''
@@ -935,6 +1052,25 @@ ${followHtml}
   return `<div class="flow-group" style="${style}">
 ${sliceHtml}
 ${followWrap}
+</div>`
+}
+
+/** flow-group 内的动态列表切片：相对文档流，行区间/边框/padding 与独立分节片一致 */
+function flowGroupSliceHtml(el: TemplateElement, section: PageSection): string {
+  const opts = el.options ?? {}
+  const rows: FlowRow[] = Array.isArray(opts._flowRows) ? opts._flowRows : []
+  const startFlowRow = section.startFlowRow ?? 0
+  const endFlowRow = section.endFlowRow ?? 0
+  // 空行区间（跟随区整体移页）：只渲染跟随区
+  if (startFlowRow >= endFlowRow) return ''
+  const type = el.type || el.printElementType?.type || 'flowList'
+  const columns = resolveFlowColumns(opts.flowColumns)
+  const gapX = resolveFlowGapX(opts.flowGapX)
+  const rowHeight = resolveFlowRowHeight(opts.flowRowHeight)
+  return `<div class="flow-slice" style="position:relative;width:${mm(opts.width ?? 100)};overflow:visible;">
+  <div class="print-flowlist-slice" style="position:relative;width:${mm(opts.width ?? 100)};${flowSliceChromeStyle(type, opts)}">
+  ${flowRowsHtml(rows.slice(startFlowRow, endFlowRow), columns, gapX, rowHeight, startFlowRow)}
+</div>
 </div>`
 }
 

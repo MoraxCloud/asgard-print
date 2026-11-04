@@ -12,6 +12,42 @@ export function isBlockedElementType(type?: string | null): boolean {
   return !!type && (BLOCKED_ELEMENT_TYPES as readonly string[]).includes(type)
 }
 
+/**
+ * 找出模板里出现封禁元素类型的位置：覆盖多页 wrapper 与单页
+ * elements / header.elements / footer.elements 三个区，路径可直接给 AI 定位。
+ * AI 写回（print_apply_open_template 与宿主 demo）的共用门禁，不属于渲染端兜底。
+ */
+export function findBlockedElementPaths(template: unknown): string[] {
+  const paths: string[] = []
+  const scanElements = (elements: unknown, prefix: string) => {
+    if (!Array.isArray(elements)) return
+    elements.forEach((el, i) => {
+      const holder = (el ?? {}) as { type?: unknown; printElementType?: { type?: unknown } }
+      const typeStr = typeof holder.type === 'string'
+        ? holder.type
+        : typeof holder.printElementType?.type === 'string' ? holder.printElementType.type : undefined
+      if (isBlockedElementType(typeStr)) paths.push(`${prefix}[${i}].type`)
+    })
+  }
+  const scanPage = (page: unknown, prefix: string) => {
+    if (!page || typeof page !== 'object') return
+    // 单页时 prefix 为空字符串：段名直接作路径根，避免 .elements[0] 这类前导点
+    const root = (sec: string): string => (prefix ? `${prefix}.${sec}` : sec)
+    const p = page as { elements?: unknown; header?: { elements?: unknown }; footer?: { elements?: unknown } }
+    scanElements(p.elements, root('elements'))
+    scanElements(p.header?.elements, root('header.elements'))
+    scanElements(p.footer?.elements, root('footer.elements'))
+  }
+  const isMultiPage = !!template && typeof template === 'object' && Array.isArray((template as { pages?: unknown }).pages)
+  if (isMultiPage) {
+    const pages = (template as { pages: unknown[] }).pages
+    pages.forEach((page, i) => scanPage(page, `pages[${i}]`))
+  } else {
+    scanPage(template, '')
+  }
+  return paths
+}
+
 export function generateId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -47,11 +83,14 @@ export function createDefaultOptions(type: ElementType): ElementOptions {
       }
     }
     case 'flowList':
-      // 每行列数与行高都必须由作者指定（不自动算列数）；跨列默认关，打开后上限钳到列数
+      // 每行列数与行高都必须由作者指定（不自动算列数）；跨列默认关，打开后上限钳到列数。
+      // 容器布局缺省 fixed：新拖入也不自动分页，动态模式由作者显式开启。
       return {
         ...base, width: 141.1, height: 21.2, fontSize: 12, formatter: '{name} {spec}',
         flowColumns: 4, flowRowHeight: 8, flowGapX: 4,
         flowAutoSpan: false, flowMaxSpan: 2,
+        flowLayoutMode: 'fixed', flowPaddingTop: 0, flowPaddingRight: 0,
+        flowPaddingBottom: 0, flowPaddingLeft: 0,
       }
     case 'hline':
       return { ...base, width: 70.6, height: 1.8, borderWidth: 0.75 }
