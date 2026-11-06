@@ -123,6 +123,74 @@ export function readContentBottom(doc: Document): number {
   return maxBottom
 }
 
+/** 元素在页面内的实测矩形（CSS px，相对其所属区域的左上角） */
+export interface ElementRect {
+  id: string
+  left: number
+  top: number
+  width: number
+  height: number
+  /** 坐标基准区域：content 元素相对内容区，header/footer 元素相对各自容器 */
+  zone: 'content' | 'header' | 'footer'
+}
+
+/**
+ * 读取每个 [data-element-id] 元素的实际渲染矩形（供预览回读「写的坐标 vs 实际落位」）。
+ * 坐标按区域区分基准：
+ * - 内容区元素以 .content-area 左上角为原点（有页眉时才是模板坐标，不能用页面 padding 推）；
+ * - 页眉/页脚元素分别以 .page-header / .page-footer 左上角为原点，与模板的三区坐标一致。
+ * 某个容器缺失时回退到 .print-page 内容框（减 padding），zone 仍标 'content'。
+ */
+export function readElementRects(doc: Document, pageIndex = 0): ElementRect[] {
+  const pages = doc.querySelectorAll<HTMLElement>('.print-page')
+  const page = pages[pageIndex]
+  if (!page) return []
+  const pageRect = page.getBoundingClientRect()
+  const cs = doc.defaultView?.getComputedStyle(page)
+  const padLeft = Number.parseFloat(cs?.paddingLeft ?? '0') || 0
+  const padTop = Number.parseFloat(cs?.paddingTop ?? '0') || 0
+  const result: ElementRect[] = []
+  page.querySelectorAll<HTMLElement>('[data-element-id]').forEach(node => {
+    // 表格内部 <table> 与外层容器可能同时带标识时，只取最内层（表格本身）
+    if (node.querySelector('[data-element-id]')) return
+    const id = node.getAttribute('data-element-id')
+    if (!id) return
+    const rect = node.getBoundingClientRect()
+    // closest 会向上找整棵文档树；元素都在本页下，不存在跨页命中的可能
+    const zoneOrigin = zoneOriginFor(node, pageRect, padLeft, padTop)
+    result.push({
+      id,
+      left: rect.left - zoneOrigin.left,
+      top: rect.top - zoneOrigin.top,
+      width: rect.width,
+      height: rect.height,
+      zone: zoneOrigin.zone,
+    })
+  })
+  return result
+}
+
+/** 元素所属区域的坐标基准（CSS px 坐标 + zone 标记） */
+function zoneOriginFor(
+  node: Element,
+  pageRect: DOMRect,
+  padLeft: number,
+  padTop: number,
+): { left: number; top: number; zone: ElementRect['zone'] } {
+  const of = (el: HTMLElement, zone: ElementRect['zone']): { left: number; top: number; zone: ElementRect['zone'] } => {
+    const r = el.getBoundingClientRect()
+    return { left: r.left, top: r.top, zone }
+  }
+  const header = node.closest('.page-header')
+  if (header) return of(header as HTMLElement, 'header')
+  const footer = node.closest('.page-footer')
+  if (footer) return of(footer as HTMLElement, 'footer')
+  const area = node.closest('.content-area')
+  if (area) return of(area as HTMLElement, 'content')
+  // 回退：容器缺失时用页面内容框（padding box 内侧）当内容区原点
+  return { left: pageRect.left + padLeft, top: pageRect.top + padTop, zone: 'content' }
+}
+
 /** 码值 → SVG 映射；单项失败跳过，交由 core 降级文本占位 */
 export function renderCodes(specs: CodeSpec[]): Record<string, string> {
   const map: Record<string, string> = {}
@@ -142,6 +210,7 @@ export const domExecutor = {
   waitReady,
   readMeasurements,
   readContentBottom,
+  readElementRects,
   renderCodes,
   /** 自动缩小（data-fit="shrink"）：须在 readMeasurements 之前调用，返回需回写的字号清单 */
   applyTextFit,

@@ -3,6 +3,30 @@ import { draftTemplate, ELEMENT_KINDS } from '../draft.js'
 import { validateTemplateJson } from '../validate.js'
 
 describe('draftTemplate', () => {
+  it('空 spec（无 preset 且无 elements）报 elements error', () => {
+    const r = draftTemplate({})
+    expect(r.issues.some(i => i.level === 'error' && i.path === 'elements'
+      && i.message.includes('preset') && i.message.includes('elements'))).toBe(true)
+  })
+
+  it('elements 缺失与为空数组同样报 error', () => {
+    expect(draftTemplate({ elements: [] }).issues.some(i => i.level === 'error' && i.path === 'elements')).toBe(true)
+  })
+
+  it('只给 elements 的正常路径不受该 error 影响', () => {
+    const r = draftTemplate({
+      elements: [{ type: 'text', options: { left: 10, top: 10, width: 60, height: 8 }, formatter: '{no}' }],
+    })
+    expect(r.issues.some(i => i.level === 'error' && i.path === 'elements')).toBe(false)
+    expect(r.template.elements).toHaveLength(1)
+  })
+
+  it('preset 路径不受空 spec error 影响', () => {
+    const r = draftTemplate({ preset: 'label-40x30' })
+    expect(r.issues.some(i => i.path === 'elements')).toBe(false)
+    expect(r.template.elements.length).toBeGreaterThan(1)
+  })
+
   it('产出可通过契约校验与体检的 A4 模板', () => {
     const r = draftTemplate({
       elements: [
@@ -56,5 +80,30 @@ describe('draftTemplate', () => {
     expect(ELEMENT_KINDS).toHaveLength(13)
     expect(ELEMENT_KINDS.find(k => k.type === 'html')?.blocked).toBe(true)
     expect(ELEMENT_KINDS.find(k => k.type === 'flowList')?.requiredOptionKeys).toContain('flowColumns')
+  })
+
+  it('全宽背景元素自动补 pageable=false，小元素不动', () => {
+    const r = draftTemplate({
+      elements: [
+        // A4 内容区 190×277：全宽外框会被判为背景层
+        { type: 'rect', options: { left: 0, top: 0, width: 190, height: 277 } },
+        { type: 'text', options: { left: 10, top: 10, width: 60, height: 8 } },
+      ],
+    })
+    const pagination = (r.template.elements[0].options as { pagination?: { pageable?: boolean } }).pagination
+    expect(pagination?.pageable).toBe(false)
+    expect((r.template.elements[1].options as { pagination?: unknown }).pagination).toBeUndefined()
+    expect(r.issues.some(i => i.level === 'warning' && i.message.includes('pageable=false'))).toBe(true)
+    expect(r.issues.filter(i => i.level === 'error')).toEqual([])
+  })
+
+  it('作者显式设置的 pagination 不被覆盖', () => {
+    const r = draftTemplate({
+      elements: [
+        { type: 'rect', options: { left: 0, top: 0, width: 190, height: 277, pagination: { pageable: true, keepWithNext: false } } },
+      ],
+    })
+    const pagination = (r.template.elements[0].options as { pagination?: { pageable?: boolean } }).pagination
+    expect(pagination?.pageable).toBe(true)
   })
 })

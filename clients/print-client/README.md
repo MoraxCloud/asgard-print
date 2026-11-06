@@ -70,12 +70,14 @@ npm run build -w @worm-vue3-print/print-client # electron-vite 三环境构建�
 
 ## 打包
 
-### 安装包（macOS 上交叉打包 mac + win）
+### 安装包（按平台）
 
 macOS 上可同时产出 **Intel 与 Apple Silicon 两份 mac 安装包**与**交叉构建的 Windows 安装包**（`win.nsis` 目标）。要构建的架构由 `electron-builder.yml` 的 `mac.target.arch` 声明，命令行无需指定；Linux 三类安装包走 Docker 容器，见下一节：
 
 ```bash
 npm run pack:client          # 只产出安装包（先构建 core 与 client 的 dist）
+npm run pack:client:mac      # 只构建 macOS（Intel + Apple Silicon）
+npm run pack:client:win      # 只构建 Windows x64 NSIS（可在 macOS 交叉构建）
 npm run pack:client:release  # 额外生成 SHA256SUMS.txt 并打印发行版附件上传命令
 ```
 
@@ -113,6 +115,14 @@ deb / rpm / AppImage 三类 Linux 安装包统一在容器里出，命令一条�
 
 ```bash
 npm run pack:client:linux
+```
+
+如果直接在原生 Linux 主机上构建，需先安装 Node.js、`rpm`/`rpmbuild` 以及 electron-builder 所需的 Linux 打包工具，然后执行：
+
+```bash
+npm ci
+npm run build
+npm run pack:client:linux:native
 ```
 
 - 为什么要容器：`rpm` 目标要调用 `rpmbuild`，宿主 macOS 没有这个可执行文件。`deb` 与 `AppImage` 实测可在 macOS 直接交叉产出，但三类产物同源同环境，口径不分叉。
@@ -208,7 +218,8 @@ npm run pack:client:dir
 - 鉴权恒为 `Authorization: Bearer <配对 token>`（与安全开关无关；首次开启会自动生成 token，设置页展示并可一键复制，Agent 配置 JSON 也由设置页直接生成）。
 - 设置页「复制 JSON 配置」产出完整的 `mcpServers` 配置块，服务名称固定 `worm-vue3-print`，可直接粘贴进 Agent 的 MCP 配置文件；已配置其它 MCP 服务时，请把该条目合并进现有 `mcpServers`，勿整段覆盖。
 - 无状态 JSON 响应模式：每个 `POST /mcp` 独立处理，`GET/DELETE /mcp` 返回 405；MCP 关闭时 `/mcp` 返回 404；请求体与 WebSocket 帧上限同为 4MiB，仅接受 `127.0.0.1:<端口>` 的 Host（防 DNS rebinding）。
-- 暴露 9 个工具：上述 5 个纯计算工具，以及 `print_list_open_templates`、`print_get_open_template`、`print_patch_open_template`、`print_apply_open_template`。真实分页与出纸效果由设计器或打印预览确认。
+- 暴露 12 个工具：上述 5 个纯计算工具，以及 `print_list_open_templates`、`print_get_open_template`、`print_patch_open_template`、`print_apply_open_template`（读写实时画布）、`print_preview_template`（渲染 PNG 自评）、`print_analyze_reference_image`（设计稿转几何）、`print_compare_with_reference`（与参考图逐线比对：先比内容区在整幅图像中的位置，再比线位与线长）。真实分页与出纸效果由设计器或打印预览确认。
+- **外部访问如实声明**：`print_preview_template` / `print_compare_with_reference` 在客户端本地渲染、不上传数据，但模板内引用的远程图片/字体 URL 与 `file://` 资源会由隐藏窗口真实取回，故两者注解为 `openWorldHint: true`；`print_analyze_reference_image` 只按绝对路径读本地图片（限 20MB、长边 4000px、总像素 2000 万，超限在解码前拒绝），`openWorldHint` 保持 false。宿主 Agent 应把渲染类工具当作可能触网的只读操作，必要时请用户批准。
 - `print_get_open_template` / `print_patch_open_template` / `print_apply_open_template` 读写的是浏览器里**正在编辑**的实时模板：宿主页面（demo 或业务页）用浏览器 SDK `setRequestHandler` 注册 `template.get/apply` 处理器并 `attachTemplate` 签到；`apply` 带防覆盖 revision（陈旧 `baseRevision` 返回冲突，需重新读取），并拒绝 `html` 等封禁元素。同一 sessionId 跨 Origin 重连被拒，页面断开后台自动回收会话。
 
 工作流：demo 打开设计器 → 客户端开启 MCP → Agent 直连 `/mcp` 读取/修改画布模板。宿主接入方式见 [AI 接入](../../docs/中文/指南/AI接入.md)。
