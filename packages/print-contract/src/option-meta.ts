@@ -32,6 +32,7 @@ const obj = <K extends OptionKey>(...k: K[]) => groupOf('object', k)
 export const OPTION_META: Record<OptionKey, Meta> = {
   // 几何（mm）
   ...mm('left', 'top', 'width', 'height'),
+  ...mm('marginTop', 'marginRight', 'marginBottom', 'marginLeft'),
   ...mm('barHeight', 'maxWidth', 'maxHeight', 'flowRowHeight', 'flowGapX'),
   ...mm('flowPaddingTop', 'flowPaddingRight', 'flowPaddingBottom', 'flowPaddingLeft'),
   ...mm('tableDefaultPadding'),
@@ -41,7 +42,7 @@ export const OPTION_META: Record<OptionKey, Meta> = {
   ...pt('tableDefaultFontSize'),
   // 无量纲整数
   ...count('barWidth', 'barQuietZone', 'qrQuietZone', 'flowColumns', 'flowMaxSpan'),
-  ...flag('wordWrap', 'keepLineBreaks', 'fixed', 'locked', 'visible', 'hideTitle', 'draggable', 'flowAutoSpan'),
+  ...flag('wordWrap', 'keepLineBreaks', 'repeatOnEveryPage', 'fixed', 'locked', 'visible', 'hideTitle', 'draggable', 'flowAutoSpan'),
   ...text('testData', 'fontFamily', 'fontWeight', 'borderStyle', 'textDecoration', 'textType',
     'barcodeType', 'barAutoWidth', 'src', 'objectPosition', 'axis', 'groupId', 'dataSource',
     'formatter', 'styler', 'rowStyler', 'tableDefaultFontFamily', 'tableDefaultColor'),

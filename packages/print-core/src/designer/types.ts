@@ -273,6 +273,11 @@ export interface ElementOptions {
   top: number
   width: number
   height: number
+  /** 四向外边距（mm）：left/top 为外边距盒坐标，width/height 为实际边框盒尺寸 */
+  marginTop?: number
+  marginRight?: number
+  marginBottom?: number
+  marginLeft?: number
   /** @deprecated 统一使用 formatter */
   title?: string
   testData?: string
@@ -297,6 +302,9 @@ export interface ElementOptions {
    * 同时仍按框宽自动换行。与「自动换行」互斥让位——`wordWrap === false` 时本档不出声明（单行优先）。
    */
   keepLineBreaks?: boolean
+  /** 每页重复：首页保留设计 top；续页将整组重复元素归一到页眉底部 0 起排并保持相对间距，正文接在重复区后并扣减其预算；不参与编组或跟随区，表格/动态列表完整重复，连续纸仅输出一次 */
+  repeatOnEveryPage?: boolean
+  /** 固定：每页保持首页设计 top/left，不参与正文分页结算、编组或跟随区；连续纸仅输出一次。与每页重复同时开启时优先固定 */
   fixed?: boolean
   locked?: boolean
   /** 元素可见性（图层面板切换） */

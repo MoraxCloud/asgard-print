@@ -124,6 +124,22 @@ describe('validateTemplateJson', () => {
     expect(r.issues.every(i => i.level === 'warning')).toBe(true)
   })
 
+  it('每页重复与固定均使用正式布尔字段', () => {
+    const current = validateTemplateJson({
+      ...base,
+      elements: [{ ...textElement, options: { ...textElement.options, repeatOnEveryPage: true } }],
+    })
+    expect(current.ok).toBe(true)
+    expect(current.unknownKeys).not.toContain('elements[0].options.repeatOnEveryPage')
+
+    const legacy = validateTemplateJson({
+      ...base,
+      elements: [{ ...textElement, options: { ...textElement.options, fixed: true } }],
+    })
+    expect(legacy.ok).toBe(true)
+    expect(legacy.unknownKeys).not.toContain('elements[0].options.fixed')
+  })
+
   it('未知 option 键不判失败但列进 unknownKeys（AI 幻觉键）', () => {
     const r = validateTemplateJson({
       ...base,
@@ -170,5 +186,35 @@ describe('validateTemplateJson', () => {
     })
     expect(r.ok).toBe(false)
     expect(r.issues.some(i => i.path.endsWith('tiling.columns'))).toBe(true)
+  })
+})
+
+describe('元素四向外边距契约', () => {
+  it('接受有限正负边距且不报未知键', () => {
+    const r = validateTemplateJson({
+      ...base,
+      elements: [{
+        ...textElement,
+        options: {
+          ...textElement.options,
+          marginTop: 2, marginRight: -3, marginBottom: 4, marginLeft: -5,
+        },
+      }],
+    })
+    expect(r.ok).toBe(true)
+    expect(r.unknownKeys).not.toContain('elements[0].options.marginTop')
+    expect(r.issues.filter(i => i.level === 'error')).toEqual([])
+  })
+
+  it('非有限边距报在对应字段路径', () => {
+    const r = validateTemplateJson({
+      ...base,
+      elements: [{
+        ...textElement,
+        options: { ...textElement.options, marginTop: Number.POSITIVE_INFINITY },
+      }],
+    })
+    expect(r.ok).toBe(false)
+    expect(r.issues.some(i => i.level === 'error' && i.path === 'elements[0].options.marginTop')).toBe(true)
   })
 })

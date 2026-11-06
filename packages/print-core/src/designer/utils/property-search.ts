@@ -31,6 +31,10 @@ export const PROPERTY_REGISTRY: PropertyGroupDef[] = [
       { key: 'ps-top', keywords: ['Y', '纵坐标', 'top', '位置'] },
       { key: 'ps-width', keywords: ['W', '宽度', 'width', '尺寸'] },
       { key: 'ps-height', keywords: ['H', '高度', 'height', '尺寸'] },
+      { key: 'ps-margin-top', keywords: ['上外边距', '外边距', 'margintop'], default: 0, defaultUnit: 'mm' },
+      { key: 'ps-margin-right', keywords: ['右外边距', '外边距', 'marginright'], default: 0, defaultUnit: 'mm' },
+      { key: 'ps-margin-bottom', keywords: ['下外边距', '外边距', 'marginbottom'], default: 0, defaultUnit: 'mm' },
+      { key: 'ps-margin-left', keywords: ['左外边距', '外边距', 'marginleft'], default: 0, defaultUnit: 'mm' },
     ],
   },
   {
@@ -217,6 +221,7 @@ export const PROPERTY_REGISTRY: PropertyGroupDef[] = [
     items: [
       { key: 'ad-locked', keywords: ['锁定', 'lock'] },
       { key: 'ad-fixed', keywords: ['每页重复', 'repeat'] },
+      { key: 'ad-fixed-position', keywords: ['固定', '每页固定', 'fixed'] },
       { key: 'ad-z-index', keywords: ['层级', 'zindex'] },
       { key: 'ad-delete', keywords: ['删除'] },
     ],

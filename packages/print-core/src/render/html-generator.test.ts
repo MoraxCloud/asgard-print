@@ -1,6 +1,7 @@
 // print-core/src/render/html-generator.test.ts
 import { describe, it, expect } from 'vitest'
 import { generateHtml, renderFinalPages, wrapHtmlDocument } from './html-generator.js'
+import { paginate } from './pagination-engine.js'
 import type { TemplateData, PageLayout, CodeRenderer, CodeRenderOptions } from './types.js'
 
 /** 测试用 CodeRenderer：返回可识别 SVG；EAN13 非数字码值抛错模拟非法码 */
@@ -1356,5 +1357,81 @@ describe('单元格换行与断词口径', () => {
 
   it('不换行档逐字保持强制单行（该档语义就是折叠换行符）', () => {
     expect(cellRow(cellHtml({ wordWrap: false }))).toContain('white-space:nowrap;overflow:hidden')
+  })
+})
+
+describe('repeatOnEveryPage 表格：整表 HTML 每页完整输出', () => {
+  it('整表重复消费分页 renderTop，不再回退设计 top', () => {
+    const tpl = makeTemplate({ ...matrixOptions(), repeatOnEveryPage: true, top: 12, height: 24 })
+    ;(tpl.elements as any[]).push(
+      { id: 'body-1', type: 'text', options: { left: 0, top: 0, width: 60, height: 150 } },
+      { id: 'body-2', type: 'text', options: { left: 0, top: 150, width: 60, height: 150 } },
+    )
+    const pages = paginate(tpl, new Map([
+      ['tbl-1', { id: 'tbl-1', measuredHeight: 24 }],
+      ['body-1', { id: 'body-1', measuredHeight: 150 }],
+      ['body-2', { id: 'body-2', measuredHeight: 150 }],
+    ]))
+    expect(pages[1]!.sections).toContainEqual({ elementId: 'tbl-1', type: 'element', renderTop: 0 })
+
+    const html = generateHtml(tpl, pages)
+    const wrappers = [...html.matchAll(/<div class="print-element" style="([^"]+)"[^>]*>\s*<table class="print-table" data-element-id="tbl-1"/g)]
+    expect(wrappers).toHaveLength(2)
+    expect(wrappers[0]![1]).toContain('top:12mm')
+    expect(wrappers[1]![1]).toContain('top:0mm')
+    expect(wrappers[0]![1]).not.toContain('height:24mm')
+    expect(wrappers[1]![1]).not.toContain('height:24mm')
+  })
+
+  it('普通表格设 repeatOnEveryPage 后经分页：两页各自渲染完整表格（无切片），A/B 数据行每页出现', () => {
+    const tpl = makeTemplate({ ...matrixOptions(), repeatOnEveryPage: true })
+    ;(tpl.elements as any[]).push(
+      { id: 'body-1', type: 'text', options: { left: 0, top: 0, width: 60, height: 150 } },
+      { id: 'body-2', type: 'text', options: { left: 0, top: 150, width: 60, height: 150 } },
+    )
+    const pages = paginate(tpl, new Map([
+      ['tbl-1', { id: 'tbl-1', measuredHeight: 24 }],
+      ['body-1', { id: 'body-1', measuredHeight: 150 }],
+      ['body-2', { id: 'body-2', measuredHeight: 150 }],
+    ]))
+    expect(pages).toHaveLength(2)
+    const html = generateHtml(tpl, pages)
+    expect((html.match(/data-element-id="tbl-1"/g) ?? [])).toHaveLength(2)
+    expect((html.match(/>A<\/td>/g) ?? [])).toHaveLength(2)
+    expect((html.match(/>B<\/td>/g) ?? [])).toHaveLength(2)
+  })
+})
+
+describe('元素四向外边距定位', () => {
+  const sections = pageWith([{ elementId: 'tbl-1', type: 'table-slice', startRow: 0, endRow: 0 }])
+
+  it('普通元素输出四边距，缺省模板 HTML 不含新声明', () => {
+    const options = { left: 2, top: 17, width: 80, marginTop: 1, marginRight: 2, marginBottom: 3, marginLeft: 4 }
+    const html = generateHtml(makeTemplate(options), sections)
+    expect(html).toContain('position:absolute;left:2mm;top:17mm;width:80mm;')
+    expect(html).toContain('margin-top:1mm;margin-right:2mm;margin-bottom:3mm;margin-left:4mm')
+    const legacy = generateHtml(makeTemplate({ left: 2, top: 17, width: 80 }), sections)
+    expect(legacy).not.toMatch(/margin-(top|right|bottom|left):/)
+  })
+})
+
+describe('flow-group 外边距几何', () => {
+  it('锚点与成员分别消费自身边距，组容器不重复偏移', () => {
+    const t = makeTemplate({
+      ...flowGroupOptions(), left: 10, top: 20, width: 100, height: 30,
+      marginTop: 3, marginBottom: 4, marginLeft: 2,
+    })
+    t.elements.push({ id: 'follow-1', type: 'text', options: {
+      left: 15, top: 58, width: 80, height: 8,
+      marginTop: 5, marginBottom: 2, marginLeft: 1, formatter: '跟随备注',
+    } } as any)
+    const html = generateHtml(t, pageWith([{
+      elementId: 'tbl-1', type: 'flow-group', startRow: 0, endRow: 1,
+      followElementIds: ['follow-1'], groupTop: 20,
+    }]))
+    expect(html).toMatch(/flow-slice" style="[^"]*margin-top:3mm[^"]*margin-left:2mm/)
+    expect(html).toMatch(/position:absolute;left:5mm;top:1mm;[^"]*margin-top:5mm[^"]*margin-left:1mm/)
+    expect(html).toMatch(/class="flow-follow" style="[^"]*height:16mm/)
+    expect(html).not.toMatch(/flow-group" style="[^"]*margin-top/)
   })
 })

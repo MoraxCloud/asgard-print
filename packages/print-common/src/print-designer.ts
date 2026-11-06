@@ -3,7 +3,7 @@
 // 类名与 print-canvas 对齐的原因见 shell/controls.ts 顶部说明。
 import {
   calcResizeRect, computeFitScale, computeAdsorb, findMainCell, FIT_SCALE_MIN_PERCENT,
-  generateId, getPaperDimensions, MIN_SCALE_PERCENT, mmToPx, nextWheelScale, pxToMm,
+  generateId, getPaperDimensions, MIN_SCALE_PERCENT, mmToPx, nextWheelScale, pxToMm, resolveElementBoxes,
 } from '@worm-vue3-print/core/designer'
 import { buildFontFaceCss, normalizeTemplate, validateTiling, collectPrintWarnings } from '@worm-vue3-print/core'
 import { fitTextNode } from '@worm-vue3-print/core/browser'
@@ -125,6 +125,7 @@ export class PrintDesignerElement extends HTMLElement {
   private exprMountedFor: ExpressionEditorTarget | null = null
   /** 帮助弹窗：canvas 的 helpVisible（showHelp 为 false 时强制收起，见 set showHelp） */
   private helpVisible = false
+  private helpInitialTab: string | undefined
   private unmountHelp: (() => void) | null = null
   private drag: DragState | null = null
   private snapTimer: ReturnType<typeof setTimeout> | null = null
@@ -367,7 +368,8 @@ export class PrintDesignerElement extends HTMLElement {
   // 接线口径与 canvas 一致：点工具栏「帮助」即打开，Esc / × / 点遮罩空白处关闭；
   // 与表达式编辑器同一「挂到 shadow root、作为 .designer-container 兄弟节点」的范式，
   // 差别在于本弹窗无输入态，用 mount/unmount 而不是按对象身份复用。
-  private openHelp() {
+  private openHelp(initialTab?: string) {
+    this.helpInitialTab = initialTab
     this.helpVisible = true
     this.syncHelp()
   }
@@ -382,7 +384,10 @@ export class PrintDesignerElement extends HTMLElement {
     // showHelp=false 时 canvas 由 watch 强制收起（并隐藏入口按钮）；这里同一口径兜住直接改属性的路径
     const want = this.helpVisible && this.getAttribute('show-help') !== 'false'
     if (want && !this.unmountHelp) {
-      this.unmountHelp = mountHelpModal(this.root, { onClose: () => this.closeHelp() })
+      this.unmountHelp = mountHelpModal(this.root, {
+        initialTab: this.helpInitialTab,
+        onClose: () => this.closeHelp(),
+      })
     } else if (!want && this.unmountHelp) {
       const off = this.unmountHelp
       this.unmountHelp = null
@@ -521,6 +526,13 @@ export class PrintDesignerElement extends HTMLElement {
     // 属性台搜索：门控在分组构建时已生效，这里再重放一次，覆盖重绘与输入两条路径
     applyPropertySearch(this.root, this.state.propSearch)
     this.applyShrinkFit()
+    // 整树重建换掉了滚动容器 .canvas-area，滚动位置归零会跳顶、标尺错位；
+    // 按最近一次滚动值恢复，随后的 measureRuler 在恢复后的矩形上实测（见 onScroll）
+    const area = this.root.querySelector<HTMLElement>('.canvas-area')
+    if (area) {
+      area.scrollLeft = this.scrollPos.x
+      area.scrollTop = this.scrollPos.y
+    }
     this.syncRulers()
     this.persistChrome()
   }
@@ -552,8 +564,10 @@ export class PrintDesignerElement extends HTMLElement {
     const measured = pr.width / mmToPx(this.store.paperSize.width)
     this.geom = {
       paperScale: Math.abs(measured - target) < 0.002 ? target : measured,
-      originX: pr.left - ar.left - RULER_THICK + this.scrollPos.x,
-      originY: pr.top - ar.top - RULER_THICK + this.scrollPos.y,
+      // 两矩形都是实时视口坐标（getBoundingClientRect 已含滚动偏移），
+      // 差值即为纸张原点相对尺条的偏移；再叠加 scrollPos 会双重计账（与 canvas CanvasArea.vue 同口径）
+      originX: pr.left - ar.left - RULER_THICK,
+      originY: pr.top - ar.top - RULER_THICK,
       viewW: area.clientWidth - RULER_THICK,
       viewH: area.clientHeight - RULER_THICK,
     }
@@ -644,7 +658,7 @@ export class PrintDesignerElement extends HTMLElement {
       case 'help':
         // canvas：@help="helpVisible = true"。本包额外保留向外派发（宿主可监听），顺序是先派再开
         this.dispatchEvent(new CustomEvent('help', { bubbles: true, composed: true }))
-        this.openHelp()
+        this.openHelp(arg as string | undefined)
         break
       case 'guide-remove': s.removeGuide(arg as string); break
       case 'resize-start': this.beginResize(arg as { event: MouseEvent; id: string; point: string }); break
@@ -1031,6 +1045,9 @@ export class PrintDesignerElement extends HTMLElement {
     this.store.setScale(target, minPercent)
     area.scrollLeft = ax * ratio - anchorX + padX
     area.scrollTop = ay * ratio - anchorY + padY
+    // 直写滚动触发的 scroll 事件可能晚于下一次 paint（rAF 整树重建），
+    // 此处同步记账，恢复才不落旧值
+    this.scrollPos = { x: area.scrollLeft, y: area.scrollTop }
   }
 
   /** 工具栏放大/缩小：与滚轮同一乘性步进，以视口几何中心为锚点 */
@@ -1070,10 +1087,12 @@ export class PrintDesignerElement extends HTMLElement {
 
   private onScroll() {
     const area = this.root.querySelector<HTMLElement>('.canvas-area')
-    if (area) {
-      this.scrollPos = { x: area.scrollLeft, y: area.scrollTop }
-      this.syncRulers()
-    }
+    if (!area) return
+    this.scrollPos = { x: area.scrollLeft, y: area.scrollTop }
+    // 滚动是高频路径，不全量重绘：浮层平移在此定点补齐，标尺才钉得住视口
+    const overlay = this.root.querySelector<HTMLElement>('.ruler-overlay')
+    if (overlay) overlay.style.transform = `translate(${this.scrollPos.x}px, ${this.scrollPos.y}px)`
+    this.syncRulers()
   }
 
   // ─── 全局指针移动：拖拽 / 缩放 / 吸附 ───
@@ -1090,18 +1109,19 @@ export class PrintDesignerElement extends HTMLElement {
         const { dx, dy } = dmm(ev.clientX - this.drag.startX, ev.clientY - this.drag.startY)
         if (Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05) this.drag.moved = true
         const first = s.elements.find(e => e.id === this.drag!.primary)
-        const rect = first && {
+        const movingBox = first && resolveElementBoxes(first.options).margin
+        const rect = first && movingBox && {
           id: first.id,
           left: (this.drag.origin.get(first.id)?.left ?? 0) + dx,
           top: (this.drag.origin.get(first.id)?.top ?? 0) + dy,
-          width: first.options.width,
-          height: first.options.height,
+          width: movingBox.width,
+          height: movingBox.height,
         }
         let snapped: { left: number; top: number } | null = null
         if (rect && s.snapToGrid !== false) {
           const others = s.elements
             .filter(e => !this.drag!.ids.includes(e.id) && (e.zone || 'content') === this.drag!.zone)
-            .map(e => ({ id: e.id, left: e.options.left, top: e.options.top, width: e.options.width, height: e.options.height }))
+            .map(e => ({ id: e.id, ...resolveElementBoxes(e.options).margin }))
           const zone = zoneRectsMM(s.templateData, s.paperSize)[this.drag.zone]
           const result = computeAdsorb(rect, others, this.manualGuides()) as AdsorbLike
           snapped = { left: result.left, top: result.top }

@@ -36,6 +36,20 @@ function rowOf(host: HTMLElement, text: string) {
 
 const btnOf = (host: HTMLElement, text: string) => rowOf(host, text).querySelector<HTMLButtonElement>('.pd-reset-btn')!
 
+describe('common 外边距输入与恢复默认值', () => {
+  it('上外边距恢复缺省，左外边距允许负数', () => {
+    const { el, host } = paint('text', { marginTop: 4, marginLeft: 1 })
+    expect(btnOf(host, '上').dataset.tip).toBe('恢复默认值（0 mm）')
+    btnOf(host, '上').click()
+    expect(el.options.marginTop).toBeUndefined()
+    const input = rowOf(host, '左').querySelector<HTMLInputElement>('input')!
+    expect(input.min).toBe('')
+    input.value = '-3'
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(el.options.marginLeft).toBe(-3)
+  })
+})
+
 describe('common 外观组「恢复默认值」', () => {
   it('外观组各行都渲染出图标，且图标不带文字', () => {
     const { host } = paint('text', { fontSize: 18 })
@@ -142,23 +156,24 @@ describe('边框与背景三行「恢复默认值」', () => {
   })
 })
 
-describe('高级组三行「恢复默认值」', () => {
-  it('锁定 / 每页重复 / 层级 都挂图标；出厂未设 ⇒ 偏离态 + 点击删键', () => {
-    const { el, host } = paint('text', { locked: true, fixed: true, zIndex: 5 })
-    for (const t of ['锁定', '每页重复', '层级']) {
+describe('高级组「恢复默认值」', () => {
+  it('锁定 / 每页重复 / 每页固定 / 层级 都挂图标；出厂未设 ⇒ 偏离态 + 点击删键', () => {
+    const { el, host } = paint('text', { locked: true, repeatOnEveryPage: true, fixed: true, zIndex: 5 })
+    for (const t of ['锁定', '每页重复', '每页固定', '层级']) {
       const b = btnOf(host, t)
       expect(b.classList.contains('is-dirty'), `应为偏离态：${t}`).toBe(true)
       expect(b.getAttribute('data-tip'), `提示不对：${t}`).toBe('恢复默认值')
       b.click()
     }
     expect(el.options.locked).toBeUndefined()
+    expect(el.options.repeatOnEveryPage).toBeUndefined()
     expect(el.options.fixed).toBeUndefined()
     expect(el.options.zIndex).toBeUndefined()
   })
 
-  it('等于出厂（未设）时三行全灰', () => {
+  it('等于出厂（未设）时全部灰态', () => {
     const { host } = paint('text')
-    for (const t of ['锁定', '每页重复', '层级']) {
+    for (const t of ['锁定', '每页重复', '每页固定', '层级']) {
       expect(btnOf(host, t).classList.contains('is-dirty'), `不该点亮：${t}`).toBe(false)
     }
   })

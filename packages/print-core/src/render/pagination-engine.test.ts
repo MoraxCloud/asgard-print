@@ -1,6 +1,6 @@
 // print-render/src/pagination-engine.test.ts
 import { describe, it, expect } from 'vitest'
-import { paginate, tableDesignBottom } from './pagination-engine.js'
+import { paginate, tableDesignBottom, collectFollowMemberIds } from './pagination-engine.js'
 import type { TemplateData, MeasuredElement } from './types.js'
 
 describe('tableDesignBottom：表格设计底部 = top + max(options.height, Σ 行高)', () => {
@@ -159,6 +159,31 @@ describe('分页配置读取位置（options 内）', () => {
     // pageable=false 的元素恒在第一页，即使超高 300mm > 275mm 也不换页
     expect(pages).toHaveLength(1)
     expect(pages[0].sections[0].elementId).toBe('e1')
+  })
+
+  it('动态表格分页后，pageable=false 元素仍只落在第一页设计坐标', () => {
+    const table = makeTable(6, 0)
+    table.options.height = 54
+    const tpl = makeTemplate(table)
+    tpl.elements.push({
+      id: 'attachments', type: 'text',
+      options: {
+        left: 110, top: 10, width: 80, height: 5, rotate: 90,
+        pagination: { pageable: false, keepWithNext: false },
+      },
+    } as any)
+    const measured = measure(Array(6).fill(100), 0)
+    measured.set('attachments', { id: 'attachments', measuredHeight: 5 })
+
+    const pages = paginate(tpl, measured)
+
+    expect(pages).toHaveLength(3)
+    expect(pages.map(page => page.sections.filter(section => section.elementId === 'attachments')))
+      .toEqual([
+        [{ elementId: 'attachments', type: 'element', renderTop: 10 }],
+        [],
+        [],
+      ])
   })
 
   it('tablePagination 在 options 内时 enabled=false 生效（超高也整表不拆）', () => {
@@ -496,6 +521,22 @@ describe('paginateTable 小计行 subtotal', () => {
     expect(pages).toHaveLength(1)
     expect(pages[0].sections[0]).toMatchObject({ startRow: 0, endRow: 3, subtotal: true, summary: true })
   })
+
+  it('repeatOnEveryPage 存在时汇总行单独移页也从固定区域下方开始', () => {
+    const el = makeSubtotalTable(7, 10, 100)
+    const tpl = makeFreeTemplate([freeEl('fixed', 0, 60, { repeatOnEveryPage: true }), el])
+    const measured = new Map<string, MeasuredElement>([
+      ...measure(Array(7).fill(50).concat([10, 100]), 1),
+      ...measureFree([['fixed', 60]]),
+    ])
+    const pages = paginate(tpl, measured)
+
+    expect(pages).toHaveLength(3)
+    expect(pages[2]!.sections).toContainEqual({
+      elementId: 'tbl-1', type: 'table-slice', startRow: 7, endRow: 7,
+      summary: true, renderTop: 60,
+    })
+  })
 })
 
 // ─── 堆叠（纵向重叠）与显式编组：并集计高、整组同页、换页平移 ───
@@ -576,6 +617,281 @@ describe('堆叠元素：纵向重叠按并集计高，不重复扣高', () => {
     expect(pages[0].sections).toHaveLength(1)
     expect(pages[0].sections[0]).toMatchObject({ elementId: 'e0', renderTop: 10 })
     expect(pages[1].sections[0]).toMatchObject({ elementId: 'e1', renderTop: 0 })
+  })
+})
+
+// ─── 元素 fixed：每页保持首页设计位置，不参与正文分页结算 ───
+
+describe('元素 fixed：每页保持首页设计位置', () => {
+  it('固定元素在首页和续页使用相同的设计 top', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 100, 40, { fixed: true }),
+      freeEl('body-1', 0, 200),
+      freeEl('body-2', 200, 100),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed', 40], ['body-1', 200], ['body-2', 100],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    for (const page of pages) {
+      expect(page.sections).toContainEqual({ elementId: 'fixed', type: 'element', renderTop: 100 })
+    }
+  })
+
+  it('固定元素不占续页正文分页预算', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 100, 40, { fixed: true }),
+      freeEl('body-1', 0, 200),
+      freeEl('body', 200, 200),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed', 40], ['body-1', 200], ['body', 200],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    expect(pages[1]!.sections).toContainEqual({ elementId: 'body', type: 'element', renderTop: 0 })
+  })
+
+  it('固定与每页重复同时开启时只按固定输出一次', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 100, 40, { fixed: true, repeatOnEveryPage: true }),
+      freeEl('body-1', 0, 200),
+      freeEl('body-2', 200, 100),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed', 40], ['body-1', 200], ['body-2', 100],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    for (const page of pages) {
+      expect(page.sections.filter(section => section.elementId === 'fixed')).toEqual([
+        { elementId: 'fixed', type: 'element', renderTop: 100 },
+      ])
+    }
+  })
+})
+
+// ─── 元素 repeatOnEveryPage：每页重复，首页与续页正文统一从重复区下方起排 ───
+
+describe('元素 repeatOnEveryPage：首页按设计布局，续页正文从重复区域下方起排', () => {
+  it('首页正文保持设计坐标和原预算，续页从重复底边开始', () => {
+    const bodies = [
+      freeEl('body-1', 50, 150), freeEl('body-2', 200, 100), freeEl('body-3', 300, 50),
+    ]
+    const measured = measureFree([
+      ['body-1', 150], ['body-2', 100], ['body-3', 50], ['fixed', 40],
+    ])
+    const pages = paginate(makeFreeTemplate([
+      freeEl('fixed', 0, 40, { repeatOnEveryPage: true }),
+      ...bodies,
+    ]), measured)
+
+    expect(pages).toHaveLength(2)
+    for (const page of pages) {
+      expect(page.sections).toContainEqual({ elementId: 'fixed', type: 'element', renderTop: 0 })
+    }
+    expect(pages[0]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'body-1', type: 'element', renderTop: 50 },
+      { elementId: 'body-2', type: 'element', renderTop: 200 },
+    ]))
+    expect(pages[1]!.sections).toContainEqual(
+      { elementId: 'body-3', type: 'element', renderTop: 40 },
+    )
+  })
+
+  it('续页重复区从页眉下方 0 起排并保持元素相对间距', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed-a', 100, 20, { repeatOnEveryPage: true }),
+      freeEl('fixed-b', 130, 10, { repeatOnEveryPage: true }),
+      freeEl('body-1', 0, 200),
+      freeEl('body-2', 200, 100),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed-a', 20], ['fixed-b', 10], ['body-1', 200], ['body-2', 100],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    expect(pages[0]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'fixed-a', type: 'element', renderTop: 100 },
+      { elementId: 'fixed-b', type: 'element', renderTop: 130 },
+      { elementId: 'body-1', type: 'element', renderTop: 0 },
+    ]))
+    expect(pages[1]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'fixed-a', type: 'element', renderTop: 0 },
+      { elementId: 'fixed-b', type: 'element', renderTop: 30 },
+      { elementId: 'body-2', type: 'element', renderTop: 40 },
+    ]))
+  })
+
+  it('首页重复区设计底边为 28mm 时，续页归一为 26mm 且表格不覆盖重复区', () => {
+    const infoTable = makeTable(2, 0)
+    infoTable.id = 'infoTable'
+    Object.assign(infoTable.options, { top: 12, height: 16, repeatOnEveryPage: true })
+    const goodsTable = makeTable(20, 1)
+    goodsTable.id = 'goodsTable'
+    goodsTable.options.top = 31
+    const tpl = makeFreeTemplate([
+      freeEl('font1', 2, 8, { repeatOnEveryPage: true }),
+      infoTable,
+      goodsTable,
+    ])
+    const pages = paginate(tpl, new Map<string, MeasuredElement>([
+      ['font1', { id: 'font1', measuredHeight: 8 }],
+      ['infoTable', { id: 'infoTable', measuredHeight: 16, measuredRowHeights: [8, 8] }],
+      ['goodsTable', {
+        id: 'goodsTable', measuredHeight: 400,
+        measuredRowHeights: Array(20).fill(20), repeatHeaderHeight: 20,
+      }],
+    ]))
+
+    expect(pages.length).toBeGreaterThan(1)
+    expect(pages[0]!.sections.find(s => s.elementId === 'goodsTable')).toMatchObject({ renderTop: 31 })
+    expect(pages[1]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'font1', type: 'element', renderTop: 0 },
+      { elementId: 'infoTable', type: 'element', renderTop: 10 },
+    ]))
+    const continuationFlow = pages.slice(1).flatMap(page => page.sections)
+      .filter(section => section.elementId === 'goodsTable')
+    expect(continuationFlow.length).toBeGreaterThan(0)
+    for (const section of continuationFlow) {
+      expect(section.type === 'flow-group' ? section.groupTop : section.renderTop).toBeGreaterThanOrEqual(26)
+    }
+  })
+
+  it('重复底边 100mm 时首页预算保持 275mm，续页降为 175mm', () => {
+    const el = makeTable(12, 0)
+    const tpl = makeFreeTemplate([freeEl('fixed', 0, 100, { repeatOnEveryPage: true }), el])
+    const measured = new Map<string, MeasuredElement>([
+      ...measure(Array(12).fill(50), 0),
+      ...measureFree([['fixed', 100]]),
+    ])
+    const pages = paginate(tpl, measured)
+    const slices = pages.flatMap(page => page.sections)
+      .filter(section => section.type === 'table-slice')
+
+    expect(pages).toHaveLength(4)
+    expect(slices.map(section => ({
+      startRow: section.startRow,
+      endRow: section.endRow,
+      renderTop: section.renderTop,
+    }))).toEqual([
+      { startRow: 0, endRow: 5, renderTop: 0 },
+      { startRow: 5, endRow: 8, renderTop: 100 },
+      { startRow: 8, endRow: 11, renderTop: 100 },
+      { startRow: 11, endRow: 12, renderTop: 100 },
+    ])
+  })
+
+  it.each([
+    { label: '普通元素', extra: {} },
+    { label: '固定首页元素', extra: { pagination: { pageable: false } } },
+    { label: '编组元素', extra: { groupId: 'rotated-body' } },
+  ])('首页$label按设计坐标布局并保留顶部越界警告', ({ extra }) => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 0, 40, { repeatOnEveryPage: true }),
+      freeEl('body', 10, 10, { rotate: 90, ...extra }),
+    ])
+    const pages = paginate(tpl, measureFree([['fixed', 40], ['body', 10]]))
+
+    expect(pages).toHaveLength(1)
+    expect(pages[0]!.sections).toContainEqual({ elementId: 'body', type: 'element', renderTop: 10 })
+    expect(pages[0]!.warnings).toHaveLength(1)
+    expect(pages[0]!.warnings![0]).toContain('body')
+    expect(pages[0]!.warnings![0]).toContain('15')
+  })
+
+  it('续页旋转重复元素按外接盒归一并保留区域', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 20, 10, { repeatOnEveryPage: true, rotate: 90 }),
+      freeEl('body-1', 0, 200),
+      freeEl('body-2', 200, 100),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed', 10], ['body-1', 200], ['body-2', 100],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    expect(pages[0]!.sections).toContainEqual({
+      elementId: 'body-1', type: 'element', renderTop: 0,
+    })
+    expect(pages[0]!.warnings).toHaveLength(1)
+    expect(pages[1]!.warnings).toBeUndefined()
+    expect(pages[1]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'fixed', type: 'element', renderTop: 25 },
+      { elementId: 'body-2', type: 'element', renderTop: 60 },
+    ]))
+  })
+
+  it.each([
+    { label: '显式编组', explicit: true },
+    { label: '隐式编组', explicit: false },
+  ])('$label 整体移到续页时保留 60mm 固定区域', ({ explicit }) => {
+    const tpl = makeFreeTemplate([
+      freeEl('fixed', 0, 60, { repeatOnEveryPage: true }),
+      freeEl('pre', 0, 250),
+      freeEl('a', 300, 30, explicit ? { groupId: 'g' } : {}),
+      freeEl('b', 320, 30, explicit ? { groupId: 'g' } : {}),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['fixed', 60], ['pre', 250], ['a', 30], ['b', 30],
+    ]))
+
+    expect(pages).toHaveLength(2)
+    expect(pages[0]!.sections).toContainEqual({ elementId: 'pre', type: 'element', renderTop: 0 })
+    expect(pages[1]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'a', type: 'element', renderTop: 60 },
+      { elementId: 'b', type: 'element', renderTop: 80 },
+    ]))
+  })
+
+  it('表格跟随区整体移页时从固定底边开始', () => {
+    const tpl = makeFollowTemplate([makeFollowEl('follow-1', 39, 300)])
+    tpl.elements.unshift(freeEl('fixed', 0, 60, { repeatOnEveryPage: true }) as any)
+    const measured = new Map<string, MeasuredElement>([
+      ...measureFollow(Array(30).fill(10), [{ id: 'follow-1', h: 300 }]),
+      ...measureFree([['fixed', 60]]),
+    ])
+    const pages = paginate(tpl, measured)
+
+    expect(pages.at(-1)!.sections).toContainEqual(expect.objectContaining({
+      elementId: 'tbl-1', type: 'flow-group', startRow: 0, endRow: 0,
+      followElementIds: ['follow-1'], groupTop: 60,
+    }))
+  })
+
+  it('repeatOnEveryPage 与正文重叠且同 groupId 时仍不参与显式或隐式编组', () => {
+    const pages = paginate(makeFreeTemplate([
+      freeEl('fixed', 0, 40, { repeatOnEveryPage: true, groupId: 'g' }),
+      freeEl('body-1', 0, 100, { groupId: 'g' }),
+      freeEl('body-2', 100, 100),
+    ]), measureFree([['fixed', 40], ['body-1', 100], ['body-2', 100]]))
+    expect(pages).toHaveLength(1)
+    expect(pages[0]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'body-1', type: 'element', renderTop: 0 },
+      { elementId: 'body-2', type: 'element', renderTop: 100 },
+    ]))
+  })
+
+  it('repeatOnEveryPage 普通元素不进入表格跟随区', () => {
+    const table = { id: 'table', type: 'table', options: {
+      left: 0, top: 0, width: 100, height: 20, tableRows: [{ height: 20 }],
+    } }
+    const fixed = freeEl('fixed', 30, 10, { repeatOnEveryPage: true })
+    expect(collectFollowMemberIds([table, fixed]).has('fixed')).toBe(false)
+  })
+
+  it('repeatOnEveryPage 首页保留物理越界标记，续页归一后按实际位置重算', () => {
+    const tpl = makeFreeTemplate([
+      freeEl('body-1', 0, 150), freeEl('body-2', 150, 150),
+      freeEl('fixed', 270, 20, { repeatOnEveryPage: true }),
+    ])
+    const pages = paginate(tpl, measureFree([
+      ['body-1', 150], ['body-2', 150], ['fixed', 20],
+    ]))
+    expect(pages).toHaveLength(2)
+    expect(pages[0]!.overflow).toBe(true)
+    expect(pages[1]!.overflow).toBeUndefined()
   })
 })
 
@@ -691,5 +1007,71 @@ describe('换页流式光标：表格后续页的编组不叠压表格（回归�
     expect(topOf('a')).toBe(200)
     expect(topOf('c')).toBe(240)
     expect(topOf('d')).toBe(250)
+  })
+})
+
+// ─── fixed 可切片元素：整表每页完整重复 ───
+
+describe('repeatOnEveryPage 表格：整表每页重复，不切片、不作跟随锚点', () => {
+  it('普通表格设 repeatOnEveryPage 后：两页均含 type=element 的完整表格 section，不出现 table-slice', () => {
+    const baseTable = makeTable(2, 0)
+    const fixedTable = { ...baseTable, options: { ...baseTable.options, repeatOnEveryPage: true } }
+    const tpl = makeFreeTemplate([
+      fixedTable,
+      freeEl('body-1', 0, 150),
+      freeEl('body-2', 150, 150),
+    ])
+    const pages = paginate(tpl, new Map([
+      ...measure([8, 8], 0),
+      ...measureFree([['body-1', 150], ['body-2', 150]]),
+    ]))
+    expect(pages).toHaveLength(2)
+    for (const page of pages) {
+      expect(page.sections).toContainEqual({ elementId: 'tbl-1', type: 'element', renderTop: 0 })
+      expect(page.sections.some(s => s.elementId === 'tbl-1' && s.type !== 'element')).toBe(false)
+    }
+  })
+
+  it('模板只有 repeatOnEveryPage 元素时仍只有一页且元素不重复', () => {
+    const tpl = makeFreeTemplate([freeEl('fixed', 20, 10, { repeatOnEveryPage: true })])
+    const pages = paginate(tpl, measureFree([['fixed', 10]]))
+    expect(pages).toHaveLength(1)
+    expect(pages[0]!.sections).toEqual([{ elementId: 'fixed', type: 'element', renderTop: 20 }])
+  })
+
+  it('repeatOnEveryPage 表格不作为跟随锚点，下方文本不进入任何跟随区', () => {
+    const baseTable = makeTable(1, 0)
+    const anchored = { ...baseTable, options: { ...baseTable.options, repeatOnEveryPage: true } }
+    const after = freeEl('after', 30, 10)
+    expect(collectFollowMemberIds([anchored, after]).size).toBe(0)
+  })
+})
+
+describe('每页重复区的元素外边距', () => {
+  it('首页不受影响，续页重复区底边包含实际边框底边和 marginBottom', () => {
+    const fixed = freeEl('fixed', 10, 20, { repeatOnEveryPage: true, marginTop: 2, marginBottom: 3 })
+    const first = freeEl('first', 0, 200)
+    const continuation = freeEl('continuation', 200, 100)
+    const pages = paginate(
+      makeFreeTemplate([fixed, first, continuation]),
+      measureFree([['fixed', 20], ['first', 200], ['continuation', 100]]),
+    )
+    expect(pages[0]!.sections.find(s => s.elementId === 'first')!.renderTop).toBe(0)
+    expect(pages[1]!.sections).toEqual(expect.arrayContaining([
+      { elementId: 'fixed', type: 'element', renderTop: 0 },
+      { elementId: 'continuation', type: 'element', renderTop: 25 },
+    ]))
+  })
+})
+
+describe('切片元素的上下外边距预算', () => {
+  it('12 行表格每片扣除上下外边距和重复表头', () => {
+    const table = makeTable(12, 1)
+    table.options = { ...table.options, marginTop: 30, marginBottom: 20 }
+    const pages = paginate(makeTemplate(table), measure(Array(12).fill(50), 1))
+    expect(pages.map(page => page.sections.filter(section => section.elementId === 'tbl-1')
+      .map(section => [section.startRow, section.endRow]))).toEqual([
+        [[0, 4]], [[4, 7]], [[7, 10]], [[10, 12]],
+      ])
   })
 })

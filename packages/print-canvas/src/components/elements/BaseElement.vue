@@ -27,6 +27,13 @@
       @dblclick-cell="onDblClickCell"
     />
 
+    <div
+      v-if="marginGuideStyle"
+      class="element-margin-guide"
+      :style="marginGuideStyle"
+      aria-hidden="true"
+    />
+
     <!-- 拖拽半透明预览副本 -->
     <div v-if="isDragging" class="drag-preview" />
 
@@ -52,7 +59,7 @@ import { useDrag } from '../../composables/useDrag'
 import type { DragOptions } from '../../composables/useDrag'
 import { generateId } from '@worm-vue3-print/core/designer'
 import { useResize, RESIZE_POINTS } from '@worm-vue3-print/core/designer'
-import { mmToPx, resolveElementBorder, ELEMENT_BORDER_SIDES, resolveElementRotation } from '@worm-vue3-print/core/designer'
+import { mmToPx, resolveElementBorder, ELEMENT_BORDER_SIDES, resolveElementRotation, resolveElementMargins, resolveElementBoxes } from '@worm-vue3-print/core/designer'
 
 import { SELECTED_IDS_KEY, PREVIEW_IDS_KEY } from '../../composables/useSelection'
 import TextElement from './TextElement.vue'
@@ -143,6 +150,7 @@ const contentAttrs = computed(() =>
 
 const elementStyle = computed(() => {
   const o = props.element.options
+  const margin = resolveElementMargins(o)
   // 元素级边框与出纸共用 resolveElementBorder（box-sizing:border-box，边框不改变几何）；
   // 先整圈后逐边，键序即 CSS 写入序，逐边覆盖整圈
   const borders = resolveElementBorder(props.element.printElementType.type, o)
@@ -165,12 +173,39 @@ const elementStyle = computed(() => {
     top: o.top + 'mm',
     width: o.width + 'mm',
     height: o.height + 'mm',
+    ...(margin.top !== 0 ? { marginTop: `${margin.top}mm` } : {}),
+    ...(margin.right !== 0 ? { marginRight: `${margin.right}mm` } : {}),
+    ...(margin.bottom !== 0 ? { marginBottom: `${margin.bottom}mm` } : {}),
+    ...(margin.left !== 0 ? { marginLeft: `${margin.left}mm` } : {}),
     zIndex: o.zIndex || 'auto',
     ...borderStyles,
     // 元素级旋转：与出纸端同一 CSS 独立属性 rotate（绕盒中心），不占 transform——
     // 拖拽预览写 style.transform，两者互不覆盖；选中框/缩放手柄仍按设计盒（v1 口径）
     ...(rotateStyle.value ? { rotate: rotateStyle.value } : {}),
   }
+})
+
+const marginGuideStyle = computed(() => {
+  if (!props.designMode) return null
+  const o = props.element.options
+  const margin = resolveElementMargins(o)
+  if (ELEMENT_BORDER_SIDES.every(side => margin[side] === 0)) return null
+
+  const marginBox = resolveElementBoxes(o).margin
+  const borders = resolveElementBorder(props.element.printElementType.type, o)
+  const style: Record<string, string> = {
+    left: `${-margin.left}mm`,
+    top: `${-margin.top}mm`,
+    width: `${marginBox.width}mm`,
+    height: `${marginBox.height}mm`,
+  }
+  for (const side of ELEMENT_BORDER_SIDES) {
+    if (margin[side] === 0) continue
+    const border = borders?.edges[side] ?? borders?.all
+    const key = `border${side.charAt(0).toUpperCase()}${side.slice(1)}`
+    style[key] = `${border?.borderWidth ?? '1px'} ${border?.borderStyle ?? 'solid'} rgba(239, 68, 68, 0.35)`
+  }
+  return style
 })
 
 /** 画布旋转声明：与出纸端同一判据（排除类型、跟随区成员不转、码类低档吸附直角），0 不出声明 */
@@ -262,12 +297,13 @@ const dragConfig = reactive<DragOptions>({
 
     // 元素间吸附交给 CanvasPaper 层管理器（含引导线渲染）
     if (props.adsorbHandler) {
+      const marginBox = resolveElementBoxes(props.element.options).margin
       return props.adsorbHandler({
         id: props.element.id,
         left,
         top,
-        width: props.element.options.width,
-        height: props.element.options.height,
+        width: marginBox.width,
+        height: marginBox.height,
       })
     }
     return { left, top, lines: [] }
@@ -357,6 +393,11 @@ onUnmounted(() => {
   box-sizing: border-box;
   cursor: pointer;
   user-select: none;
+}
+.element-margin-guide {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 /* 设计态下所有元素显示浅灰虚线边框，标示占位空间大小 */
 .print-element.design-mode {
