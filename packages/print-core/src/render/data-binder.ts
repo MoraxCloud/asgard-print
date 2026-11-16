@@ -13,6 +13,7 @@ import {
   resolveFlowPadding,
   resolveFlowLayoutMode,
 } from './flow-list.js'
+import { getElementPlugin } from '../designer/element-plugin-registry.js'
 
 /**
  * 将模板中元素的 formatter 表达式求值为实际值。
@@ -103,6 +104,19 @@ function bindElement(
   if (cloned.type === 'flowList' || cloned.printElementType?.type === 'flowList') {
     bindFlowListData(cloned, data)
   }
+  // 通用扩展元素绑定（P2/P4）：插件自带 binding.bind 时由插件解释 options 与业务数据。
+  // 主体不认识任何具体扩展类型；未注册插件的元素维持既有内置分支语义。
+  const elementType = cloned.type || cloned.printElementType?.type || 'text'
+  const pluginBinding = getElementPlugin(elementType)?.binding?.bind
+  if (pluginBinding) {
+    const patched = pluginBinding(
+      cloned.options as Record<string, unknown>,
+      data as Record<string, unknown>,
+    )
+    if (patched && typeof patched === 'object') {
+      Object.assign(cloned.options, patched)
+    }
+  }
   return cloned
 }
 
@@ -144,6 +158,9 @@ function bindFlowListData(el: TemplateElement, data: Record<string, any>): void 
     })
   }
 }
+
+// 扩展元素的数据绑定实现归插件所有（binding.bind）；主体只保留上表的通用分派与
+// 内置类型（表格 / 流式列表）的绑定。P4 起此处无任何具体扩展类型知识。
 
 function resolveListSource(opts: any, data: Record<string, any>): { list: Record<string, any>[]; key: string | undefined } {
   // 优先显式 dataSource（属性面板配置）→ fields 配置 → printData 顶层第一个数组

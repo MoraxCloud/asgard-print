@@ -109,6 +109,9 @@ export type {
   MultiPageTemplateData,
   CodeRenderer,
   CodeRenderOptions,
+  ElementRenderer,
+  ElementRenderers,
+  ElementRenderSpec,
 } from './render/types.js'
 
 // 打印管线（纯 TS，Node 与浏览器都可加载；DOM 相关执行器在 ./browser 与 ./node 子路径）
@@ -119,3 +122,34 @@ export { normalizeTemplate, mergeFontDeclarations, composeMultiPageDocument, isM
 export type { MultiPageCopyInput, MultiPageDocument } from './print/multi-template.js'
 export { buildBasePageCss, buildPageGeometryCss, buildPageRuleCss } from './render/css-builder.js'
 export type { RenderFinalPagesOptions } from './render/html-generator.js'
+
+// 通用元素插件注册表（主入口与 /designer 子路径同源；状态挂在 globalThis 上，双实例不漂移）
+export {
+  defineElementPlugin,
+  registerElementPlugin,
+  getElementPlugin,
+  getElementPluginById,
+  getElementPlugins,
+  getElementPluginKinds,
+  getElementPluginTypes,
+  configurePlugin,
+  getPluginConfig,
+  registerLegacyAlias,
+  resolveLegacyAlias,
+  getLegacyAliases,
+  clearElementPlugins,
+} from './designer/element-plugin-registry.js'
+export type {
+  PrintElementPlugin,
+  ResolvedElementPlugin,
+  ElementPluginKind,
+  ElementPluginKindEntry,
+  ElementPluginDesigner,
+  ElementPluginPropertyTab,
+  ElementPluginBinding,
+  ElementPluginRender,
+  PluginExecutorBundle,
+  PluginOptionMeta,
+  PluginOptionKind,
+  PluginConfig,
+} from './designer/element-plugin-registry.js'

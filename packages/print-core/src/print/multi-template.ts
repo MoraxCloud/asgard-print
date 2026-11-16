@@ -6,6 +6,7 @@ import type {
   TemplateData,
   PageLayout,
   CodeRenderer,
+  ElementRenderers,
   MultiPageTemplateData,
 } from '../render/types.js'
 import { getPaperDimensions, isContinuousPaper } from '../render/types.js'
@@ -97,6 +98,9 @@ export interface MultiPageCopyInput {
   data: Record<string, any>
   /** 各页面模板的码值渲染器（顺序与模板一致）；缺省降级文本占位 */
   codeRenderers?: Array<CodeRenderer | undefined>
+  /** 各页面模板的图表渲染器（顺序与模板一致）；缺省降级占位 */
+  /** 各页面模板的通用扩展元素渲染器（P2，顺序与模板一致） */
+  renderersPerPage?: Array<ElementRenderers | undefined>
 }
 
 export interface MultiPageDocument {
@@ -143,7 +147,7 @@ export function composeMultiPageDocument(
           copy.boundPages[i]!,
           layouts,
           copy.data,
-          { codeRenderer: copy.codeRenderers?.[i] },
+          { codeRenderer: copy.codeRenderers?.[i], renderers: copy.renderersPerPage?.[i] },
           {
             pageOffset: offset,
             totalPages,

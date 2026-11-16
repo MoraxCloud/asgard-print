@@ -50,6 +50,7 @@ export const OPTION_META: Record<OptionKey, Meta> = {
     'formatter', 'styler', 'rowStyler', 'tableDefaultFontFamily', 'tableDefaultColor'),
   ...color('color', 'backgroundColor', 'borderColor'),
   ...obj('borders', 'pagination', 'tablePagination', 'tableRows', 'tableColWidths', 'tableDefaultBorders'),
+  // 扩展元素专属属性键不登记在主体：插件描述符的 optionMeta 是唯一来源（validate 的注册态并入）
   flowLayoutMode: { kind: 'enum', enum: ['fixed', 'dynamic'] },
   textAlign: { kind: 'enum', enum: ['left', 'center', 'right', 'justify'] },
   verticalAlign: { kind: 'enum', enum: ['top', 'middle', 'bottom'] },

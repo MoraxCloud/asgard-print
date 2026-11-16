@@ -103,7 +103,7 @@ import {
 
 | API | 说明 |
 |---|---|
-| `createDomHostRuntime(driverFactory)` | 三端共用的 DOM 宿主编排 runtime |
+| `createDomHostRuntime(factory, coreBundle?, bundles?)` | 三端共用的 DOM 宿主编排 runtime；`bundles` 由 `collectExecutorBundles()` 按插件注册态自动收集 |
 | `prepareDocument`、`renderPdf`（`pipeline.ts`） | 管线阶段函数 |
 | `buildPdfTargetSpec`、`toElectronPrintToPdfOptions`、`toPlaywrightPdfOptions` | PDF 目标规格与平台参数映射 |
 | `resolvePaperMm`、`escapeHeightMm`、`paperViewportPx` | 纸张解析、逃生门、视口换算 |

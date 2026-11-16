@@ -157,8 +157,11 @@ import {
   createDefaultTemplate,
   provideToolbarOverflow,
   createOverflowUnitDirective,
-} from '@worm-vue3-print/canvas'
-import type { PrintBusinessField, TemplateData, MultiPageTemplateData } from '@worm-vue3-print/canvas'
+} from '@worm-vue3-print/common/vue3'
+import type { PrintBusinessField, TemplateData, MultiPageTemplateData } from '@worm-vue3-print/common/vue3'
+// 可选扩展包：core 描述符与出图渲染器走 /kit，设计器 UI 走 echarts-common（plugin-kit 契约）
+import '@worm-vue3-print/echarts/kit'
+import '@worm-vue3-print/echarts-common'
 import { isMultiPageTemplate, mergeFontDeclarations } from '@worm-vue3-print/core'
 import type {
   PrintFontDeclaration,
@@ -179,6 +182,11 @@ import {
 import { deriveBatchData } from './batch-data'
 import { createTemplateSession, type TemplateSessionStatus } from './template-session'
 
+/**
+ * ECharts 图表扩展由上方 `@worm-vue3-print/echarts` 的副作用 import 自注册：
+ * 一个插件注册十个图表元素，素材卡 / 画布组件 / 属性台 / 出图渲染器全部来自插件描述符，
+ * 预览与打印共用注册表，宿主不需要任何手写注册代码。
+ */
 /** 相对路径图片（/docfiles/...）拼接基址：浏览器预览与打印保持一致，默认取当前站点 origin */
 const RENDER_BASE_URL = (import.meta.env.VITE_RENDER_BASE_URL as string | undefined) || window.location.origin
 
@@ -745,6 +753,12 @@ body,
 .demo-container {
   flex: 1;
   min-height: 0;
+}
+/* 设计器已是 Custom Element：显式给块级宽高，避免宿主 flex 容器下塌陷 */
+.demo-container print-designer {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ── 预览弹层（全屏，便于看清整页细节） ── */

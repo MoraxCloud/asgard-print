@@ -6,13 +6,14 @@ import type {
   TableSelection, PrintElementData, MultiPageTemplateData,
 } from '@worm-vue3-print/core/designer'
 import { createRuntimeElement, generateId } from '@worm-vue3-print/core/designer'
+import { getElementExtension } from './useElementExtensionRegistry'
 import { createFieldElement, createFieldLabelElement } from '@worm-vue3-print/core/designer'
 import { normalizeTemplateUnits } from '@worm-vue3-print/core/designer'
 import { syncTableElementSize } from '@worm-vue3-print/core/designer'
 import { getPaperDimensions } from '@worm-vue3-print/core/designer'
 import { computeFitScale } from '@worm-vue3-print/core/designer'
 import {
-  getZoneRects, zoneFromPaperPoint, clampToZone, finalizeElementZone, ZONE_ALLOWED_TYPES,
+  getZoneRects, zoneFromPaperPoint, clampToZone, finalizeElementZone, isZoneAllowedType,
 } from '@worm-vue3-print/core/designer'
 import { useSelection } from './useSelection'
 import { useClipboard } from './useClipboard'
@@ -401,7 +402,7 @@ export function useDesignerState(options: DesignerStateOptions = {}) {
   function placeAtDropPoint(el: RuntimeElement, dropPoint: { x: number; y: number }): boolean {
     // dropPoint 为 mm（由 CanvasArea.toPaperPoint 返回）
     const zone = zoneFromPaperPoint(templateData.value, dropPoint.x, dropPoint.y)
-    if (zone !== 'content' && !ZONE_ALLOWED_TYPES.includes(el.printElementType.type)) {
+    if (zone !== 'content' && !isZoneAllowedType(el.printElementType.type)) {
       alert('该元素类型不能放入页眉/页脚')
       return false
     }
@@ -417,7 +418,9 @@ export function useDesignerState(options: DesignerStateOptions = {}) {
   }
 
   function addElement(type: string, dropPoint?: { x: number; y: number }) {
-    const el = createRuntimeElement(type as ElementType)
+    // 扩展元素可覆盖默认选项（内置类型无扩展注册时走 core 工厂默认值）
+    const extensionOptions = getElementExtension(type)?.defaultOptions?.()
+    const el = createRuntimeElement(type as ElementType, extensionOptions)
     if (dropPoint && !placeAtDropPoint(el, dropPoint)) return
     elements.value.push(el)
     select(el.id, false)

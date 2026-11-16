@@ -32,6 +32,15 @@ export interface TablePaginationConfig {
   enabled: boolean        // 是否启用表格分页
 }
 
+/**
+ * 模板声明的插件引用：只作「启用 strict 校验 + 版本核对」的声明，
+ * 服务端禁止据 id 动态 import 模块（部署白名单由宿主依赖决定，设计文档 §3.7）。
+ */
+export interface TemplatePluginDeclaration {
+  id: string
+  version?: string
+}
+
 /** 新模板数据模型（替代旧 PrintPanel / PrintTemplateJson） */
 export interface TemplateData {
   paperSize: PaperSize
@@ -74,6 +83,11 @@ export interface TemplateData {
   guides?: AlignLine[]
   /** 设计背景（定位底图）：仅设计画布显示，用于套打对位；预览与打印管线一律忽略 */
   designBackground?: DesignBackground
+  /**
+   * 可选插件清单（设计文档 §3.4）：不写 = legacy 宽松校验（历史模板零迁移）；
+   * 写了 = strict 按注册态强校验，缺插件或版本不符直接报错而非静默出空纸。
+   */
+  plugins?: TemplatePluginDeclaration[]
 }
 
 /**
@@ -84,6 +98,8 @@ export interface TemplateData {
 export interface MultiPageTemplateData {
   version?: 1
   pages: TemplateData[]
+  /** 多页 wrapper 顶层的插件清单（与单页语义一致，见 §3.4） */
+  plugins?: TemplatePluginDeclaration[]
 }
 
 /** 模板元素引用（用于 TemplateData 各区域） */
@@ -91,12 +107,27 @@ export type TemplateElement = PrintElementData
 
 // ─── 基础类型 ───
 
-/** 元素类型 */
-export type ElementType =
+/**
+ * 插件元素类型的声明合并扩展点：主体恒为空，插件包通过
+ * `declare module '@worm-vue3-print/core/designer' { interface PluginElementTypeMap { chart: true } }`
+ * 注入类型。这样装了插件包的宿主自动拿回完整 ElementType，
+ * 所有 `Record<ElementType, T>` 穷尽映射无需改动（设计文档 §3.5）。
+ */
+export interface PluginElementTypeMap {}
+
+/**
+ * 主体内置元素类型（运行时注册态见 element-plugin-registry.ts）。
+ * 主体只认内置类型；扩展元素由插件包经 PluginElementTypeMap 声明合并注入，
+ * 运行时由通用注册表按 type 分派（设计文档 §3.5）。
+ */
+export type BuiltinElementType =
   | 'text' | 'image' | 'longText' | 'table' | 'flowList'
   | 'hline' | 'vline' | 'rect' | 'oval'
   | 'barcode' | 'qrcode' | 'html'
   | 'pageNumber'
+
+/** 元素类型：内置项 ∪ 声明合并注入的插件类型 */
+export type ElementType = BuiltinElementType | keyof PluginElementTypeMap
 
 /** 对齐方式 */
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
@@ -433,6 +464,8 @@ export interface ElementOptions {
   flowPaddingRight?: number
   flowPaddingBottom?: number
   flowPaddingLeft?: number
+  // 扩展元素专属属性不写在主体里：插件包经 `declare module` 对本接口声明合并注入，
+  // 运行时由插件 optionMeta / binding.bind 解释（设计文档 §3.5 / §3.2）。
 }
 
 /** 元素类型元数据 */

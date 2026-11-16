@@ -116,10 +116,10 @@ function stubStorage() {
 }
 
 describe('工具箱与元素层', () => {
-  it('工具箱含「流式列表」，且紧跟在表格之后（与 canvas 同序）', () => {
+  it('工具箱含「流式列表」，排在表格与长文之后（与 canvas 同序）', () => {
     const order = ELEMENT_TYPES.map(t => t.type)
     expect(order).toContain('flowList')
-    expect(order.indexOf('flowList')).toBe(order.indexOf('table') + 1)
+    expect(order.slice(order.indexOf('table'), order.indexOf('table') + 3)).toEqual(['table', 'longText', 'flowList'])
     expect(ELEMENT_TYPES.find(t => t.type === 'flowList')?.label).toBe('流式列表')
   })
 
@@ -344,14 +344,14 @@ describe('动态高度自愈', () => {
   })
 })
 
-/** 与 canvas 的 __tests__/LayerPanelIcon.spec.ts 断言同一张字面量表，任一侧改动即红 */
+/** 与 canvas 的 __tests__/LayerPanelIcon.spec.ts 断言同一张 lucide 图表，任一侧改动即红 */
 const LAYER_ICONS: Record<string, string> = {
-  text: 'T', longText: '¶', table: '⊞', flowList: '⊟', image: '🖼', barcode: '≡', qrcode: '▣',
-  hline: '—', vline: '|', rect: '□', oval: '○', html: '<>',
+  text: 'Type', longText: 'TextAlignStart', table: 'Table', flowList: 'List', image: 'Image', barcode: 'Barcode',
+  qrcode: 'QrCode', hline: 'Minus', vline: 'SeparatorVertical', rect: 'Square', oval: 'Circle', html: 'Code',
 }
 
 describe('图层面板类型图标', () => {
-  it('12 类元素各有图标，flowList 是 ⊟ 而不是 ? 兜底（与 canvas 同表）', () => {
+  it('12 类元素各有 lucide 图标，flowList 是 List 而不是 Shapes 兜底（与 canvas 同表）', () => {
     const store = new DesignerStore()
     for (const type of Object.keys(LAYER_ICONS)) {
       store.addElement(type as ElementType, { left: 0, top: 0, width: 10, height: 10, title: type })
@@ -366,9 +366,11 @@ describe('图层面板类型图标', () => {
     // 图层行按 zIndex 排序，故按「类型 → 图标」建表比对，不依赖 DOM 顺序
     const byType: Record<string, string> = {}
     for (const row of Array.from(host.querySelectorAll('.layer-item'))) {
-      byType[row.querySelector('.layer-name')?.textContent ?? ''] = row.querySelector('.layer-icon')?.textContent ?? ''
+      const icon = row.querySelector('.layer-icon')
+      byType[row.querySelector('.layer-name')?.textContent ?? ''] = icon?.getAttribute('data-icon') ?? ''
+      expect(icon?.innerHTML ?? '').toContain('<svg')
     }
     expect(byType).toEqual(LAYER_ICONS)
-    expect(Object.values(byType)).not.toContain('?')
+    expect(Object.values(byType)).not.toContain('Shapes')
   })
 })

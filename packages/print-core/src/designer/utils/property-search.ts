@@ -226,6 +226,8 @@ export const PROPERTY_REGISTRY: PropertyGroupDef[] = [
       { key: 'ad-delete', keywords: ['删除'] },
     ],
   },
+  // 扩展元素的属性搜索项由插件描述符的 propertyTab.searchKeywords 提供，
+  // 主体只保留内置属性分组（P4 起不再登记任何具体扩展类型）。
 ]
 
 /** 正向包含匹配：任一关键词包含搜索词即命中；空搜索恒命中 */

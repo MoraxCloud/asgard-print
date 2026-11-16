@@ -1,9 +1,9 @@
 // demo/src/samples/types.ts
 // 示例模板库的数据契约：一份示例 = 模板 + 静态字段树 + 静态打印数据。
-import type { PrintBusinessField, TemplateData } from '@worm-vue3-print/canvas'
+import type { PrintBusinessField, TemplateData } from '@worm-vue3-print/common/vue3'
 
 /** 示例分组（按打印场景归类，示例库弹窗据此筛选） */
-export type SampleGroup = '单据' | '标签' | '小票'
+export type SampleGroup = '单据' | '标签' | '小票' | '图表'
 
 /** 示例模板：全部数据静态内置，不依赖任何后端接口 */
 export interface SampleTemplate {

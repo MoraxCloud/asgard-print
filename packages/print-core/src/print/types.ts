@@ -1,5 +1,11 @@
 import type { CodeRenderOptions } from '../render/types.js'
-import type { CodeRenderer, MultiPageTemplateData, PageLayout, TemplateData } from '../render/types.js'
+import type {
+  CodeRenderer,
+  ElementRenderers,
+  MultiPageTemplateData,
+  PageLayout,
+  TemplateData,
+} from '../render/types.js'
 import type { PrintDataInput } from './normalize-print-data.js'
 
 /** 物理尺寸（毫米）；三端与协议的公共纸尺寸表示 */
@@ -71,6 +77,12 @@ export interface PrintJob {
   readinessMs?: number
   /** 调用方提供的码值渲染器（浏览器端覆盖语义）；提供时跳过多趟收集 */
   codeRenderer?: CodeRenderer
+  /** 调用方提供的图表渲染器（浏览器端覆盖语义）；提供时跳过多趟收集 */
+  /**
+   * 调用方提供的通用扩展元素渲染器（按元素类型索引，P2）。
+   * 提供时跳过多趟收集；缺省由注册表自动收集。
+   */
+  renderers?: ElementRenderers
 }
 
 export interface PreparedDocument {

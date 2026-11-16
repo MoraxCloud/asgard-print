@@ -7,6 +7,12 @@
 // ─── 模板模型与宿主能力契约类型 ───
 export * from './types.js'
 
+// ─── 通用元素插件注册表（主体只留机制，不留具体元素知识） ───
+export * from './element-plugin-registry.js'
+
+// ─── 元素能力位注册表（六处类型白名单的单一真源；内置与插件同权） ───
+export * from './element-capabilities.js'
+
 // ─── 文字溢出显示形式的判定（与渲染端共用同一份，避免设计态/出纸两套规则） ───
 export * from '../render/text-fit.js'
 // 流式列表的排布纯逻辑：三端出纸与两套设计器外壳共用同一份列数/跨列/估算口径
@@ -47,6 +53,8 @@ export * from './utils/zone-layout.js'
 export * from './utils/ruler.js'
 export * from './utils/preset-colors.js'
 export * from './utils/property-search.js'
+// 素材卡标签「文本较长」判据：canvas 素材台与 common 零框架外壳共用同一份
+export * from './utils/material-label.js'
 export * from './utils/crop-anchor.js'
 export * from './utils/field-groups.js'
 // 复制文本到系统剪贴板：素材台字段单击复制、表达式弹窗字段复制按钮共用（浏览器环境专用）

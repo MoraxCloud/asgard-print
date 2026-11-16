@@ -1,10 +1,14 @@
 // 服务端渲染入口：内部走 core 的共享管线，仅由 Playwright driver 提供宿主能力。
 // 对外导出名与签名保持不变（server.ts 与既有集成测试直接 import）。
 import {
+  collectExecutorBundles,
   createDomHostRuntime,
   renderPdf as coreRenderPdf,
 } from '@worm-vue3-print/core'
 import { loadExecutorBundle } from '@worm-vue3-print/core/node'
+// 部署白名单（设计文档 D3）：服务端只允许显式 import 的插件进入注册表，
+// 模板字符串永远无法触发 import()。此处只做副作用注册，不装载任何具体插件产物。
+import '@worm-vue3-print/echarts/node'
 import type { PrintJob, PrintRuntime, RenderRequest } from '@worm-vue3-print/core'
 import { BrowserPool } from './browser-pool.js'
 import { createPlaywrightDriverFactory } from './driver-playwright.js'
@@ -20,6 +24,8 @@ function runtime(): PrintRuntime {
     cachedRuntime = createDomHostRuntime(
       createPlaywrightDriverFactory(BrowserPool.getInstance()),
       loadExecutorBundle(),
+      // 扩展元素执行器一律由注册表自动收集，新增插件无需改本文件。
+      collectExecutorBundles(),
     )
   }
   return cachedRuntime

@@ -7,6 +7,8 @@ export type ExecutorMethod =
   | 'readContentBottom'
   | 'readElementRects'
   | 'renderCodes'
+  /** 通用扩展元素批量出图（P2）；方法名可经别名桥回落到插件执行器的旧名 */
+  | 'renderAssets'
   | 'applyTextFit'
 
 /** 执行器方法的宿主目标种类：window（waitReady）/ document（读 DOM）/ none（纯计算，无首参） */
@@ -22,6 +24,8 @@ export const EXECUTOR_TARGETS: Record<ExecutorMethod, ExecutorTargetKind> = {
   readContentBottom: 'document',
   readElementRects: 'document',
   renderCodes: 'none',
+  // 通用扩展元素渲染：由插件执行器（注入后的全局入口）提供，无首参
+  renderAssets: 'none',
   applyTextFit: 'document',
 }
 

@@ -250,6 +250,33 @@ export interface CodeRenderer {
   render(value: string, cellType: 'barcode' | 'qrcode', opts?: CodeRenderOptions): string
 }
 
+/**
+ * 通用扩展元素渲染规格（P2）：插件自定义元素的唯一渲染入口，
+ * 走「收集 → 批量渲染 → 回填」两趟流程。type 标明归属插件，key 为跨趟/跨进程稳定键，
+ * 其余字段由插件自行解释（通常是绑定后的 options 快照）。
+ */
+export interface ElementRenderSpec {
+  /** 元素类型（对应 PrintElementPlugin.kind.type） */
+  type: string
+  /** 稳定键：缺省时由主体按 spec 内容生成 */
+  key?: string
+  [field: string]: unknown
+}
+
+/** 通用扩展元素渲染器：同步产出内联 HTML/SVG；抛错由主体降级为文本占位 */
+export interface ElementRenderer {
+  render(spec: ElementRenderSpec): string
+}
+
+/** 按元素类型索引的渲染器集合 */
+export type ElementRenderers = Readonly<Record<string, ElementRenderer>>
+
+/**
+ * option → SVG 字符串渲染器（同步）。
+ * 与码制同构：实现由独立可选包提供（ECharts），三端通过会话原语在页面上下文批量出图，
+ * 再用映射渲染器回填；core 本身不依赖任何图表库。
+ * 渲染失败时抛出异常，由 html-generator 降级为占位。
+ */
 // ─── 渲染请求 / 响应 ───
 
 export interface RenderRequest {

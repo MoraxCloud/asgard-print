@@ -5,7 +5,12 @@ import { buildPageCss, buildSheetPageCss } from '../render/css-builder.js'
 import { buildFontFaceCss } from './fonts.js'
 import { tilePosition } from './tiling.js'
 import type { TileLayout } from './tiling.js'
-import type { CodeRenderer, PageLayout, TemplateData } from '../render/types.js'
+import type {
+  CodeRenderer,
+  ElementRenderers,
+  PageLayout,
+  TemplateData,
+} from '../render/types.js'
 
 export interface TileInput {
   /** 该份数据绑定后的模板 */
@@ -15,6 +20,8 @@ export interface TileInput {
   /** 该份原始数据（水印层使用） */
   data: Record<string, any>
   codeRenderer?: CodeRenderer
+  /** 通用扩展元素渲染器（P2） */
+  renderers?: ElementRenderers
 }
 
 /**
@@ -37,6 +44,7 @@ export function composeTiledHtml(input: {
         // 格内直接复用单份渲染产物：水印层、三区、绝对定位元素、页码变量全部照旧
         const page = renderFinalPages(copy.bound, copy.pageLayouts, copy.data, {
           codeRenderer: copy.codeRenderer,
+          renderers: copy.renderers,
         })
         return `<div class="print-tile" style="left:${pos.left}mm;top:${pos.top}mm">\n${page}\n</div>`
       })

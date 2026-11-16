@@ -9,6 +9,7 @@ import type {
   RenderRow,
   RenderCell,
   CodeRenderer,
+  ElementRenderers,
 } from './types.js'
 import { escapeInlineStyleValue, toFontFamilyStack } from '../print/fonts.js'
 import { getPaperDimensions, isContinuousPaper, getOutputRotationAngle } from './types.js'
@@ -50,10 +51,15 @@ import { splittableDesignBottom } from './pagination-engine.js'
 import { buildMergeOverlay } from './row-merge.js'
 import { barcodeAvailableBoxMm } from './barcode-dot.js'
 import { resolveElementRotation } from './rotation.js'
+import { assetSpecKey } from '../print/assets.js'
+import { getElementPlugin } from '../designer/element-plugin-registry.js'
 
 /** 渲染上下文：贯穿两遍渲染的可选依赖 */
 export interface RenderCtx {
   codeRenderer?: CodeRenderer
+  /** §4.3 兼容别名入参：P4 起扩展元素出图由插件描述符负责，此端口保留不参与分派 */
+  /** 通用扩展元素渲染器（按元素类型索引）：由打印管线按注册表收集后注入 */
+  renderers?: ElementRenderers
   /** 连续纸探针推导出的最终纸高（mm）；水印网格与 @page 必须同源 */
   pageHeightMm?: number
   /** 本页页码上下文：绑定阶段页码未知，最终趟据此对引用页码的表达式求值 */
@@ -83,6 +89,8 @@ export interface GenerateOptions {
   isMeasurementPass?: boolean
   /** 条码/二维码 SVG 渲染器；缺省或渲染抛错时降级为文本占位 */
   codeRenderer?: CodeRenderer
+  /** 通用扩展元素渲染器（按元素类型索引）；由插件注册表收集后注入 */
+  renderers?: ElementRenderers
   /** 连续纸探针推导出的最终纸高（mm）；仅最终生成时传入，使 @page/.print-page/footer 对齐 */
   pageHeightMm?: number
   /** 实际总页数：逐页截取场景只生成单页 HTML 时传真实值，避免页码表达式 {totalPages} 失真为 1 */
@@ -107,6 +115,7 @@ export function generateHtml(
   const totalPages = isMeasure ? 1 : (options?.totalPageCount ?? pageLayouts.length)
   const ctx: RenderCtx = {
     codeRenderer: options?.codeRenderer,
+    renderers: options?.renderers,
     pageHeightMm: options?.pageHeightMm,
   }
 
@@ -549,9 +558,35 @@ function renderElement(el: TemplateElement, isMeasure: boolean, containerStyle?:
     }
     case 'html':
       return `<div class="print-element" style="${style}"${measureAttr}>${opts.testData ?? opts.title ?? ''}</div>`
-    default:
+    default: {
+      // 通用扩展元素分派（P2/P4）：插件登记了渲染能力就优先出图，未命中维持既有文本语义。
+      // 主体不认识任何具体扩展类型，只把「类型 + 绑定后选项 + 落纸尺寸」交给插件解释。
+      const plugin = getElementPlugin(type)
+      if (plugin?.render) {
+        // widthMm / heightMm 是通用落纸尺寸：插件据此做 mm→px 换算。
+        // key 只用绑定后选项计算，保证测量趟与最终趟稳定且跨进程可比对。
+        const spec = {
+          type,
+          ...opts,
+          widthMm: width,
+          heightMm: fitHeight ?? height ?? 0,
+          fontFamily: opts.fontFamily,
+          key: assetSpecKey({ type, ...opts }),
+        }
+        const renderer = ctx?.renderers?.[type]
+        try {
+          const markup = renderer ? renderer.render(spec) : plugin.render.html?.(spec)
+          if (typeof markup === 'string' && markup.length > 0) {
+            return `<div class="print-element" style="${style}"${measureAttr}>${markup}</div>`
+          }
+        } catch {
+          // 收集型渲染器第一趟的 'collect' 抛错、或插件自身渲染失败：落回文本占位，
+          // 第二趟由映射渲染器回填（与码制同口径）
+        }
+      }
       // 普通文本（text）与未单列的类型都走这里：判据只在显式打开新档时出声明，缺省逐字不变
       return `<div class="print-element" style="${style}${textStyle(opts)}${whiteSpaceStyle(opts)}${elementFitStyle(fit, opts)}"${measureAttr}${fitAttr}>${esc(opts.formatter ?? opts.testData ?? '')}</div>`
+    }
   }
 }
 

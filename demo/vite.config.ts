@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 与 web 宿主一致：设计器/核心包按 monorepo 源码消费（Vite 直接编译包内 .vue/.ts）
+// 与 web 宿主一致：设计器/核心/图表包按 monorepo 源码消费（Vite 直接编译包内 .vue/.ts）
 export default defineConfig(({ mode }) => {
   // render 服务地址与鉴权密钥仅用于 dev 代理，不注入前端 bundle（避免密钥暴露到浏览器）
   // 可用环境变量覆盖：VITE_RENDER_TARGET / VITE_RENDER_API_KEY，或 .env.local
@@ -15,12 +15,18 @@ export default defineConfig(({ mode }) => {
     resolve: {
       // 数组按顺序匹配：子路径（browser/designer）必须在主入口之前命中
       alias: [
-        { find: '@worm-vue3-print/canvas/native-controls.css', replacement: fileURLToPath(new URL('../packages/print-canvas/src/styles/native-controls.css', import.meta.url)) },
+        { find: /^@worm-vue3-print\/common\/vue3$/, replacement: fileURLToPath(new URL('../packages/print-common/src/vue3/index.ts', import.meta.url)) },
+        { find: /^@worm-vue3-print\/common$/, replacement: fileURLToPath(new URL('../packages/print-common/src/index.ts', import.meta.url)) },
+        { find: /^@worm-vue3-print\/plugin-kit$/, replacement: fileURLToPath(new URL('../packages/print-plugin-kit/src/index.ts', import.meta.url)) },
+        { find: /^@worm-vue3-print\/echarts-common$/, replacement: fileURLToPath(new URL('../packages/print-echarts-common/src/index.ts', import.meta.url)) },
+        { find: /^@worm-vue3-print\/echarts\/kit$/, replacement: fileURLToPath(new URL('../packages/print-echarts/src/kit.ts', import.meta.url)) },
         { find: /^@worm-vue3-print\/core\/client$/, replacement: fileURLToPath(new URL('../packages/print-core/src/client/index.ts', import.meta.url)) },
         { find: /^@worm-vue3-print\/core\/browser$/, replacement: fileURLToPath(new URL('../packages/print-core/src/browser/index.ts', import.meta.url)) },
         { find: /^@worm-vue3-print\/core\/designer$/, replacement: fileURLToPath(new URL('../packages/print-core/src/designer/index.ts', import.meta.url)) },
         { find: /^@worm-vue3-print\/core$/, replacement: fileURLToPath(new URL('../packages/print-core/src/index.ts', import.meta.url)) },
-        { find: /^@worm-vue3-print\/canvas$/, replacement: fileURLToPath(new URL('../packages/print-canvas/src/index.ts', import.meta.url)) },
+        { find: /^@worm-vue3-print\/echarts$/, replacement: fileURLToPath(new URL('../packages/print-echarts/src/index.ts', import.meta.url)) },
+        // Vue3 兼容通道：保留 canvas 包名，解析到 common 的 /vue3 门面
+        { find: /^@worm-vue3-print\/canvas$/, replacement: fileURLToPath(new URL('../packages/print-common/src/vue3/index.ts', import.meta.url)) },
       ],
     },
     server: {

@@ -6,6 +6,8 @@ export * from './pdf-spec.js'
 export * from './measure.js'
 export * from './apply-text-fit.js'
 export * from './codes.js'
+// 通用扩展元素资产协议：与 codes 并列，不含任何具体元素类型知识
+export * from './assets.js'
 export * from './driver.js'
 export * from './ports.js'
 export * from './dom-host-runtime.js'
